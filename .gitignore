@@ -1,0 +1,60 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Uploads
+uploads/
+*.pdf
+*.jpg
+*.jpeg
+*.png
+*.doc
+*.docx
+
+# Database
+*.db
+*.sqlite
+
+# Blockchain
+blockchain/network/organizations/
+blockchain/network/channel-artifacts/
+blockchain/network/system-genesis-block/
+
+# Testing
+coverage/
+.nyc_output/
+
+# Misc
+.cache/
+temp/
+tmp/

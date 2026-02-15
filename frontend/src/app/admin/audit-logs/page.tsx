@@ -1,0 +1,192 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
+import DashboardLayout from '@/components/DashboardLayout';
+import api from '@/lib/api';
+import { ClockIcon, ShieldExclamationIcon, QrCodeIcon, UserIcon } from '@heroicons/react/24/outline';
+
+export default function AdminAuditLogs() {
+  const [logs, setLogs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchLogs();
+  }, []);
+
+  const fetchLogs = async () => {
+    try {
+      const response = await api.get('/access/logs');
+      setLogs(response.data.logs);
+    } catch (error) {
+      console.error('Error fetching logs:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getAccessTypeIcon = (type: string) => {
+    switch (type) {
+      case 'emergency':
+        return <ShieldExclamationIcon className="h-5 w-5 text-white" />;
+      case 'qr_code':
+        return <QrCodeIcon className="h-5 w-5 text-white" />;
+      default:
+        return <ClockIcon className="h-5 w-5 text-white" />;
+    }
+  };
+
+  const getAccessTypeBadge = (type: string) => {
+    const styles = {
+      emergency: 'bg-gradient-to-r from-red-500 to-pink-500',
+      qr_code: 'bg-gradient-to-r from-yellow-500 to-orange-500',
+      normal: 'bg-gradient-to-r from-blue-500 to-purple-500',
+    };
+    return styles[type as keyof typeof styles] || styles.normal;
+  };
+
+  if (loading) {
+    return (
+      <DashboardLayout role="admin">
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  return (
+    <DashboardLayout role="admin">
+      <div className="max-w-7xl mx-auto">
+        <motion.h1 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-4xl font-bold gradient-text mb-8"
+        >
+          System Audit Logs
+        </motion.h1>
+
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass card-3d overflow-hidden"
+        >
+          {logs.length === 0 ? (
+            <div className="p-12 text-center">
+              <div className="floating mx-auto w-fit mb-4">
+                <ClockIcon className="h-20 w-20 text-gray-400" />
+              </div>
+              <h3 className="text-2xl font-semibold text-gray-900 mb-2">No audit logs</h3>
+              <p className="text-gray-600">No system activity recorded yet</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-white/10">
+                <thead className="bg-gradient-to-r from-blue-500/10 to-purple-500/10">
+                  <tr>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                      User
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                      Patient
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                      Action
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                      Access Type
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                      Date & Time
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/10">
+                  {logs.map((log, index) => (
+                    <motion.tr 
+                      key={log.id}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                      className="hover:bg-white/5 transition-colors duration-200"
+                    >
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className="p-2 bg-gradient-to-br from-green-400 to-emerald-500 rounded-lg mr-3">
+                            <UserIcon className="h-5 w-5 text-white" />
+                          </div>
+                          <div>
+                            <div className="font-semibold text-gray-900">
+                              {log.user_first_name} {log.user_last_name}
+                            </div>
+                            <div className="text-xs text-gray-500 capitalize">{log.role}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-medium text-gray-900">
+                          {log.patient_first_name} {log.patient_last_name}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="text-sm font-medium text-gray-900">{log.action}</span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-3 py-1.5 rounded-full text-xs font-semibold text-white flex items-center space-x-1 w-fit ${getAccessTypeBadge(log.access_type)}`}>
+                          {getAccessTypeIcon(log.access_type)}
+                          <span className="ml-1">{log.access_type.replace('_', ' ')}</span>
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        {new Date(log.created_at).toLocaleString()}
+                      </td>
+                    </motion.tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </motion.div>
+
+        {logs.length > 0 && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.3 }}
+            className="mt-6 glass p-6 rounded-xl border border-blue-500/20"
+          >
+            <h3 className="font-semibold text-gray-900 mb-3 flex items-center text-lg">
+              <div className="p-1.5 bg-gradient-to-br from-blue-400 to-purple-500 rounded-lg mr-2">
+                <ClockIcon className="h-5 w-5 text-white" />
+              </div>
+              Access Type Legend
+            </h3>
+            <div className="grid md:grid-cols-3 gap-4">
+              <div className="flex items-center space-x-2">
+                <span className="px-3 py-1 bg-gradient-to-r from-blue-500 to-purple-500 text-white text-xs font-semibold rounded-full flex items-center">
+                  <ClockIcon className="h-4 w-4 mr-1" />
+                  Normal
+                </span>
+                <span className="text-sm text-gray-600">Regular approved access</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <span className="px-3 py-1 bg-gradient-to-r from-red-500 to-pink-500 text-white text-xs font-semibold rounded-full flex items-center">
+                  <ShieldExclamationIcon className="h-4 w-4 mr-1" />
+                  Emergency
+                </span>
+                <span className="text-sm text-gray-600">Emergency access granted</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <span className="px-3 py-1 bg-gradient-to-r from-yellow-500 to-orange-500 text-white text-xs font-semibold rounded-full flex items-center">
+                  <QrCodeIcon className="h-4 w-4 mr-1" />
+                  QR Code
+                </span>
+                <span className="text-sm text-gray-600">Access via QR code</span>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </div>
+    </DashboardLayout>
+  );
+}

@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  # IPFS Node (Local)
+  ipfs:
+    image: ipfs/kubo:latest
+    container_name: lifeledger-ipfs
+    environment:
+      - IPFS_PROFILE=server
+    ports:
+      - "4001:4001"     # P2P
+      - "5001:5001"     # API
+      - "8080:8080"     # Gateway
+    volumes:
+      - ipfs_data:/data/ipfs
+      - ipfs_staging:/export
+    networks:
+      - lifeledger-network
+    restart: unless-stopped
+
+  # Hardhat Node (Local Blockchain)
+  hardhat:
+    build:
+      context: ./blockchain
+      dockerfile: Dockerfile
+    container_name: lifeledger-blockchain
+    ports:
+      - "8545:8545"
+    volumes:
+      - ./blockchain:/app
+      - blockchain_data:/app/artifacts
+    networks:
+      - lifeledger-network
+    command: npx hardhat node --hostname 0.0.0.0
+    restart: unless-stopped
+
+volumes:
+  ipfs_data:
+  ipfs_staging:
+  blockchain_data:
+
+networks:
+  lifeledger-network:
+    driver: bridge
