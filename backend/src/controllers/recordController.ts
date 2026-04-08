@@ -8,6 +8,74 @@ import { logAccessToBlockchain } from '../services/blockchainService';
 import { analyzeMedicalRecord } from '../services/aiService';
 import { analyzeFileContent } from '../services/fileAnalysisService';
 
+type ColumnInfo = {
+  column_name: string;
+};
+
+const getTableColumns = async (client: any, tableName: string) => {
+  const result = await client.query(
+    `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = $1
+    `,
+    [tableName]
+  );
+
+  return new Set<string>(result.rows.map((row: ColumnInfo) => row.column_name));
+};
+
+const insertAccessLog = async (
+  client: any,
+  payload: {
+    userId: unknown;
+    patientId?: unknown;
+    recordId?: unknown;
+    action: string;
+    blockchainTx?: string | null;
+  }
+) => {
+  const accessLogColumns = await getTableColumns(client, 'access_logs');
+  const entries: Array<[string, unknown]> = [];
+  const isNumericId = (value: unknown) => /^\d+$/.test(String(value ?? ''));
+
+  if (accessLogColumns.has('user_id') && payload.userId !== undefined && isNumericId(payload.userId)) {
+    entries.push(['user_id', payload.userId]);
+  }
+  if (accessLogColumns.has('patient_id') && payload.patientId !== undefined && isNumericId(payload.patientId)) {
+    entries.push(['patient_id', payload.patientId]);
+  }
+  if (accessLogColumns.has('record_id') && payload.recordId !== undefined && isNumericId(payload.recordId)) {
+    entries.push(['record_id', payload.recordId]);
+  }
+  if (accessLogColumns.has('action')) {
+    entries.push(['action', payload.action]);
+  }
+  if (accessLogColumns.has('blockchain_tx') && payload.blockchainTx) {
+    entries.push(['blockchain_tx', payload.blockchainTx]);
+  }
+
+  if (!entries.length || !entries.some(([column]) => column === 'action')) {
+    return;
+  }
+
+  const columns = entries.map(([column]) => column);
+  const values = entries.map(([, value]) => value);
+  const placeholders = values.map((_, index) => `$${index + 1}`).join(', ');
+
+  await client.query(`INSERT INTO access_logs (${columns.join(', ')}) VALUES (${placeholders})`, values);
+};
+
+const toBlockchainRecordId = (value: string | number) => {
+  const normalized = String(value);
+  if (/^\d+$/.test(normalized)) {
+    return parseInt(normalized, 10);
+  }
+
+  const hex = normalized.replace(/-/g, '').slice(0, 8);
+  return parseInt(hex || '0', 16);
+};
+
 export const createRecord = async (req: AuthRequest, res: Response) => {
   const client = await pool.connect();
   
@@ -15,11 +83,18 @@ export const createRecord = async (req: AuthRequest, res: Response) => {
     const { patientId, title, description, recordType, recordDate } = req.body;
     const userId = req.user!.id;
     const role = req.user!.role;
+    const recordsColumns = await getTableColumns(client, 'medical_records');
+    const usersColumns = await getTableColumns(client, 'users');
+    const providerColumn = recordsColumns.has('doctor_id')
+      ? 'doctor_id'
+      : recordsColumns.has('provider_id')
+      ? 'provider_id'
+      : null;
 
     // Verify permissions
     if (role === 'patient') {
       // Patients can only create records for themselves
-      if (parseInt(patientId) !== userId) {
+      if (String(patientId) !== String(userId)) {
         return res.status(403).json({ error: 'Cannot create records for other patients' });
       }
     }
@@ -42,24 +117,62 @@ export const createRecord = async (req: AuthRequest, res: Response) => {
     }
 
     // Insert record into database
+    const recordInsert: Record<string, unknown> = {
+      patient_id: patientId,
+      title,
+      record_type: recordType,
+      description: encryptedDescription,
+    };
+
+    if (providerColumn && role === 'doctor') {
+      recordInsert[providerColumn] = userId;
+    }
+
+    if (recordsColumns.has('record_date') && recordDate) {
+      recordInsert.record_date = recordDate;
+    }
+    if (recordsColumns.has('file_path') && filePath) {
+      recordInsert.file_path = filePath;
+    }
+    if (recordsColumns.has('file_hash') && fileHash) {
+      recordInsert.file_hash = fileHash;
+    }
+    if (recordsColumns.has('ipfs_cid') && ipfsCid) {
+      recordInsert.ipfs_cid = ipfsCid;
+    }
+    if (recordsColumns.has('is_encrypted')) {
+      recordInsert.is_encrypted = true;
+    }
+    if (recordsColumns.has('mime_type') && (req as any).file?.mimetype) {
+      recordInsert.mime_type = (req as any).file.mimetype;
+    }
+    if (recordsColumns.has('file_size') && (req as any).file?.size) {
+      recordInsert.file_size = (req as any).file.size;
+    }
+
+    const entries = Object.entries(recordInsert).filter(([, value]) => value !== undefined);
+    const insertColumns = entries.map(([key]) => key);
+    const insertValues = entries.map(([, value]) => value);
+    const placeholders = insertValues.map((_, index) => `$${index + 1}`).join(', ');
+
     const result = await client.query(
-      `INSERT INTO medical_records (patient_id, doctor_id, title, description, record_type, record_date, file_path, file_hash, is_encrypted, ipfs_cid)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       RETURNING id, patient_id, doctor_id, title, record_type, record_date, created_at, ipfs_cid`,
-      [patientId, role === 'doctor' ? userId : null, title, encryptedDescription, recordType, recordDate, filePath, fileHash, true, ipfsCid]
+      `INSERT INTO medical_records (${insertColumns.join(', ')}) VALUES (${placeholders}) RETURNING id, patient_id, title, record_type, created_at`,
+      insertValues
     );
 
     const recordId = result.rows[0].id;
 
     // Get patient info for blockchain
-    const patientInfo = await client.query(
-      'SELECT patient_id FROM users WHERE id = $1',
-      [patientId]
-    );
+    const patientInfoField = usersColumns.has('patient_id')
+      ? 'patient_id'
+      : usersColumns.has('blockchain_identity')
+      ? 'blockchain_identity'
+      : 'NULL AS patient_id';
+    const patientInfo = await client.query(`SELECT ${patientInfoField} FROM users WHERE id = $1`, [patientId]);
 
     // Log to blockchain
     const blockchainResult = await logAccessToBlockchain(
-      recordId,
+      toBlockchainRecordId(recordId),
       { title, recordType, recordDate },
       'CREATE',
       patientInfo.rows[0]?.patient_id || `USER-${patientId}`,
@@ -109,11 +222,13 @@ export const createRecord = async (req: AuthRequest, res: Response) => {
     }
 
     // Log access
-    await client.query(
-      `INSERT INTO access_logs (user_id, patient_id, record_id, action, access_type, blockchain_tx)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [userId, patientId, recordId, 'CREATE', 'normal', blockchainResult.txHash || null]
-    );
+    await insertAccessLog(client, {
+      userId,
+      patientId,
+      recordId,
+      action: 'CREATE',
+      blockchainTx: blockchainResult.txHash || null,
+    });
 
     logger.info(`Record created by ${role} ${userId} for patient ${patientId}`);
 
@@ -142,18 +257,33 @@ export const getRecords = async (req: AuthRequest, res: Response) => {
     const userId = req.user!.id;
     const role = req.user!.role;
     const { patientId } = req.query;
+    const recordsColumns = await getTableColumns(client, 'medical_records');
+    const providerColumn = recordsColumns.has('doctor_id')
+      ? 'doctor_id'
+      : recordsColumns.has('provider_id')
+      ? 'provider_id'
+      : null;
+    const recordDateSelect = recordsColumns.has('record_date')
+      ? 'r.record_date'
+      : 'r.created_at AS record_date';
+    const recordDateOrderBy = recordsColumns.has('record_date') ? 'r.record_date' : 'r.created_at';
+    const filePathSelect = recordsColumns.has('file_path')
+      ? 'r.file_path'
+      : 'NULL AS file_path';
+    const softDeleteFilter = recordsColumns.has('is_deleted') ? 'AND COALESCE(r.is_deleted, false) = false' : '';
 
     let query = '';
     let params: any[] = [];
 
     if (role === 'patient') {
       query = `
-        SELECT r.id, r.title, r.record_type, r.record_date, r.file_path, r.created_at,
+        SELECT r.id, r.title, r.record_type, ${recordDateSelect}, ${filePathSelect}, r.created_at,
                d.first_name as doctor_first_name, d.last_name as doctor_last_name
         FROM medical_records r
-        LEFT JOIN users d ON r.doctor_id = d.id
-        WHERE r.patient_id = $1
-        ORDER BY r.record_date DESC
+        LEFT JOIN users d ON ${providerColumn ? `r.${providerColumn}::text = d.id::text` : 'FALSE'}
+        WHERE r.patient_id::text = $1::text
+        ${softDeleteFilter}
+        ORDER BY ${recordDateOrderBy} DESC
       `;
       params = [userId];
     } else if (role === 'doctor') {
@@ -173,30 +303,32 @@ export const getRecords = async (req: AuthRequest, res: Response) => {
       }
 
       query = `
-        SELECT r.id, r.title, r.record_type, r.record_date, r.file_path, r.created_at,
+        SELECT r.id, r.title, r.record_type, ${recordDateSelect}, ${filePathSelect}, r.created_at,
                p.first_name as patient_first_name, p.last_name as patient_last_name
         FROM medical_records r
-        LEFT JOIN users p ON r.patient_id = p.id
-        WHERE r.patient_id = $1
-        ORDER BY r.record_date DESC
+        LEFT JOIN users p ON r.patient_id::text = p.id::text
+        WHERE r.patient_id::text = $1::text
+        ${softDeleteFilter}
+        ORDER BY ${recordDateOrderBy} DESC
       `;
       params = [patientId];
 
       // Log access
-      await client.query(
-        `INSERT INTO access_logs (user_id, patient_id, action, access_type)
-         VALUES ($1, $2, $3, $4)`,
-        [userId, patientId, 'VIEW_RECORDS', 'normal']
-      );
+      await insertAccessLog(client, {
+        userId,
+        patientId,
+        action: 'VIEW_RECORDS',
+      });
     } else if (role === 'admin') {
       query = `
-        SELECT r.id, r.title, r.record_type, r.record_date, r.created_at,
+        SELECT r.id, r.title, r.record_type, ${recordDateSelect}, r.created_at,
                p.first_name as patient_first_name, p.last_name as patient_last_name,
                d.first_name as doctor_first_name, d.last_name as doctor_last_name
         FROM medical_records r
-        LEFT JOIN users p ON r.patient_id = p.id
-        LEFT JOIN users d ON r.doctor_id = d.id
-        ${patientId ? 'WHERE r.patient_id = $1' : ''}
+        LEFT JOIN users p ON r.patient_id::text = p.id::text
+        LEFT JOIN users d ON ${providerColumn ? `r.${providerColumn}::text = d.id::text` : 'FALSE'}
+        ${patientId ? 'WHERE r.patient_id::text = $1::text' : 'WHERE 1=1'}
+        ${softDeleteFilter}
         ORDER BY r.created_at DESC
         LIMIT 100
       `;

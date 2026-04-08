@@ -178,8 +178,12 @@ router.post('/analyze/:recordId', authenticate, async (req: AuthRequest, res: Re
 
     // Save insights to database
     await client.query(
-      `UPDATE medical_records SET ai_insights = $1 WHERE id = $2`,
-      [JSON.stringify(aiResult.insights), recordId]
+      `UPDATE medical_records
+       SET ai_insights = $1,
+           extracted_text = $2,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $3`,
+      [JSON.stringify(aiResult.insights), extractedText || null, recordId]
     );
 
     console.log('✅ AI insights generated and saved for record', recordId);

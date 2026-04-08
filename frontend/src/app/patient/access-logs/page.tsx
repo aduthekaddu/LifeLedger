@@ -126,12 +126,20 @@ export default function PatientAccessLogs() {
                         <span className="text-sm font-medium text-gray-900">{log.action}</span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
+                        {(() => {
+                          const accessType = typeof log.access_type === 'string' && log.access_type.trim().length > 0
+                            ? log.access_type
+                            : 'normal';
+
+                          return (
                         <div className="flex items-center space-x-2">
-                          <span className={`px-3 py-1.5 text-xs font-semibold rounded-full text-white flex items-center space-x-1 ${getAccessTypeBadge(log.access_type)}`}>
-                            {getAccessTypeIcon(log.access_type)}
-                            <span className="ml-1">{log.access_type.replace('_', ' ')}</span>
+                          <span className={`px-3 py-1.5 text-xs font-semibold rounded-full text-white flex items-center space-x-1 ${getAccessTypeBadge(accessType)}`}>
+                            {getAccessTypeIcon(accessType)}
+                            <span className="ml-1">{accessType.replace('_', ' ')}</span>
                           </span>
                         </div>
+                          );
+                        })()}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                         {new Date(log.created_at).toLocaleString()}

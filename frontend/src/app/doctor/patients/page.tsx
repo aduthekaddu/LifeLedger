@@ -1,19 +1,24 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import DashboardLayout from '@/components/DashboardLayout';
 import FileViewer from '@/components/FileViewer';
 import AIInsights from '@/components/AIInsights';
 import api from '@/lib/api';
-import { UserGroupIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
+import { UserGroupIcon, DocumentTextIcon, MagnifyingGlassIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline';
 
 export default function DoctorPatients() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [patients, setPatients] = useState<any[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<any>(null);
   const [records, setRecords] = useState<any[]>([]);
   const [viewingRecord, setViewingRecord] = useState<any>(null);
   const [showingAI, setShowingAI] = useState<number | null>(null);
+  const [searchInput, setSearchInput] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -44,6 +49,69 @@ export default function DoctorPatients() {
     setSelectedPatient(patient);
     fetchPatientRecords(patient.id);
   };
+
+  const handleUploadForPatient = (patient: any) => {
+    const patientRef = (patient.patient_id || patient.email || '').toString();
+    if (patientRef) {
+      router.push(`/doctor/upload-record?patient=${encodeURIComponent(patientRef)}`);
+      return;
+    }
+
+    router.push('/doctor/upload-record');
+  };
+
+  useEffect(() => {
+    if (!patients.length) return;
+
+    const patientRef = (searchParams.get('patient') || '').trim().toLowerCase();
+    const legacyId = (searchParams.get('id') || '').trim();
+
+    let matchedPatient: any = null;
+
+    if (patientRef) {
+      matchedPatient = patients.find((patient) => {
+        const byPatientId = String(patient.patient_id || '').trim().toLowerCase() === patientRef;
+        const byEmail = String(patient.email || '').trim().toLowerCase() === patientRef;
+        return byPatientId || byEmail;
+      });
+    }
+
+    if (!matchedPatient && legacyId) {
+      matchedPatient = patients.find((patient) => String(patient.id) === legacyId);
+    }
+
+    if (matchedPatient && matchedPatient.id !== selectedPatient?.id) {
+      handleViewRecords(matchedPatient);
+    }
+  }, [patients, searchParams, selectedPatient?.id]);
+
+  const handleSearchPatients = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSearchTerm(searchInput.trim().toLowerCase());
+  };
+
+  const clearSearch = () => {
+    setSearchInput('');
+    setSearchTerm('');
+  };
+
+  const filteredPatients = useMemo(() => {
+    if (!searchTerm) return patients;
+
+    return patients.filter((patient) => {
+      const fullName = `${patient.first_name || ''} ${patient.last_name || ''}`.toLowerCase();
+      const email = String(patient.email || '').toLowerCase();
+      const phone = String(patient.phone_number || '').toLowerCase();
+      const patientId = String(patient.patient_id || '').toLowerCase();
+
+      return (
+        fullName.includes(searchTerm) ||
+        email.includes(searchTerm) ||
+        phone.includes(searchTerm) ||
+        patientId.includes(searchTerm)
+      );
+    });
+  }, [patients, searchTerm]);
 
   const handleDownload = async (recordId: number) => {
     try {
@@ -107,26 +175,75 @@ export default function DoctorPatients() {
               <div className="bg-white rounded-lg shadow">
                 <div className="px-6 py-4 border-b">
                   <h2 className="text-lg font-semibold text-gray-900">
-                    Patients ({patients.length})
+                    Patients ({filteredPatients.length})
                   </h2>
                 </div>
-                <div className="divide-y">
-                  {patients.map((patient) => (
+                <form onSubmit={handleSearchPatients} className="px-4 py-3 border-b bg-gray-50">
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <MagnifyingGlassIcon className="h-4 w-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={searchInput}
+                        onChange={(e) => setSearchInput(e.target.value)}
+                        placeholder="Search my patients"
+                        className="w-full text-sm border border-gray-300 rounded-lg pl-9 pr-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 bg-white"
+                      />
+                    </div>
                     <button
+                      type="submit"
+                      className="px-3 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                    >
+                      Search
+                    </button>
+                    {searchTerm && (
+                      <button
+                        type="button"
+                        onClick={clearSearch}
+                        className="px-3 py-2 text-sm font-medium bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </form>
+                <div className="divide-y">
+                  {filteredPatients.length === 0 ? (
+                    <div className="px-6 py-8 text-center text-sm text-gray-600">
+                      No patients match your search.
+                    </div>
+                  ) : filteredPatients.map((patient) => (
+                    <div
                       key={patient.id}
-                      onClick={() => handleViewRecords(patient)}
-                      className={`w-full text-left px-6 py-4 hover:bg-gray-50 transition ${
-                        selectedPatient?.id === patient.id ? 'bg-blue-50' : ''
+                      className={`px-6 py-4 transition ${
+                        selectedPatient?.id === patient.id ? 'bg-blue-50' : 'hover:bg-gray-50'
                       }`}
                     >
                       <div className="font-medium text-gray-900">
                         {patient.first_name} {patient.last_name}
                       </div>
+                      {patient.patient_id && (
+                        <div className="text-sm text-blue-700">Patient ID: {patient.patient_id}</div>
+                      )}
                       <div className="text-sm text-gray-600">{patient.email}</div>
                       {patient.phone_number && (
                         <div className="text-sm text-gray-500">{patient.phone_number}</div>
                       )}
-                    </button>
+                      <div className="mt-3 flex gap-2">
+                        <button
+                          onClick={() => handleViewRecords(patient)}
+                          className="px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                        >
+                          View Records
+                        </button>
+                        <button
+                          onClick={() => handleUploadForPatient(patient)}
+                          className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition"
+                        >
+                          Upload Record
+                        </button>
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -136,10 +253,17 @@ export default function DoctorPatients() {
             <div className="lg:col-span-2">
               {selectedPatient ? (
                 <div className="bg-white rounded-lg shadow">
-                  <div className="px-6 py-4 border-b">
+                  <div className="px-6 py-4 border-b flex items-center justify-between gap-3">
                     <h2 className="text-lg font-semibold text-gray-900">
                       Records for {selectedPatient.first_name} {selectedPatient.last_name}
                     </h2>
+                    <button
+                      onClick={() => handleUploadForPatient(selectedPatient)}
+                      className="inline-flex items-center gap-1 px-3 py-2 text-sm font-semibold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition"
+                    >
+                      <ArrowUpTrayIcon className="h-4 w-4" />
+                      <span>Upload Record</span>
+                    </button>
                   </div>
                   <div className="p-6">
                     {records.length === 0 ? (

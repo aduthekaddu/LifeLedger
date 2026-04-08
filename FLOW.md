@@ -101,7 +101,7 @@ Frontend:
 ```json
 {
   "id": 1,
-  "email": "patient@medsecure.com",
+  "email": "patient@lifeledger.com",
   "role": "patient",
   "iat": 1234567890,
   "exp": 1234567890

@@ -1,6 +1,7 @@
 import axios from 'axios';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api/v1';
+let isRedirectingToLogin = false;
 
 const api = axios.create({
   baseURL: API_URL,
@@ -31,7 +32,15 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      window.location.href = '/login';
+
+      if (typeof window !== 'undefined') {
+        const isAlreadyOnLogin = window.location.pathname === '/login';
+
+        if (!isAlreadyOnLogin && !isRedirectingToLogin) {
+          isRedirectingToLogin = true;
+          window.location.replace('/login');
+        }
+      }
     }
     return Promise.reject(error);
   }

@@ -17,7 +17,7 @@ API_URL="http://localhost:5000/api/v1"
 echo "1️⃣ Logging in as patient..."
 LOGIN_RESPONSE=$(curl -s -X POST "$API_URL/auth/login" \
   -H "Content-Type: application/json" \
-  -d '{"email":"patient@medsecure.com","password":"Test@123456"}')
+  -d '{"email":"patient@lifeledger.com","password":"Test@123456"}')
 
 TOKEN=$(echo $LOGIN_RESPONSE | grep -o '"token":"[^"]*' | cut -d'"' -f4)
 

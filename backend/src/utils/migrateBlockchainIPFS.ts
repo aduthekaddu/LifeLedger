@@ -29,7 +29,7 @@ async function migrateDatabase() {
 
     // Add blockchain_tx column to access_requests
     await client.query(`
-      ALTER TABLE access_requests 
+      ALTER TABLE emergency_access_requests 
       ADD COLUMN IF NOT EXISTS blockchain_tx VARCHAR(100);
     `);
     console.log('✅ Added blockchain_tx column to access_requests');

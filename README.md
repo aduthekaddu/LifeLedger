@@ -65,9 +65,9 @@ A secure, role-based medical record management system with blockchain integratio
 See [QUICKSTART.md](./QUICKSTART.md) for quick setup instructions.
 
 **Test Accounts:** The system automatically creates test accounts on first run:
-- Admin: `admin@medsecure.com` / `Test@123456`
-- Doctor: `doctor@medsecure.com` / `Test@123456`
-- Patient: `patient@medsecure.com` / `Test@123456`
+- Admin: `admin@lifeledger.com` / `Test@123456`
+- Doctor: `aditya.singh@lifeledger.com` / `Test@123456`
+- Patient: `patient@lifeledger.com` / `Test@123456`
 
 See [TEST_ACCOUNTS.md](./TEST_ACCOUNTS.md) for detailed testing workflows.
 

@@ -121,7 +121,7 @@ if curl -s http://localhost:5000/health > /dev/null 2>&1; then
     echo "   1. Login to get token:"
     echo '      curl -X POST http://localhost:5000/api/v1/auth/login \'
     echo '        -H "Content-Type: application/json" \'
-    echo '        -d '"'"'{"email":"patient@medsecure.com","password":"Test@123456"}'"'"
+    echo '        -d '"'"'{"email":"patient@lifeledger.com","password":"Test@123456"}'"'"''
     echo ""
     echo "   2. Verify blockchain (use token from step 1):"
     echo '      curl http://localhost:5000/api/v1/blockchain/verify \'

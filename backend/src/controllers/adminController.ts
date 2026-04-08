@@ -4,12 +4,67 @@ import logger from '../config/logger';
 import bcrypt from 'bcryptjs';
 import { AuthRequest } from '../middleware/auth';
 
+type ColumnInfo = {
+  column_name: string;
+  data_type: string;
+};
+
+const getTableColumns = async (client: any, tableName: string) => {
+  const result = await client.query(
+    `
+      SELECT column_name, data_type
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = $1
+    `,
+    [tableName]
+  );
+
+  return new Map<string, string>(
+    result.rows.map((row: ColumnInfo) => [row.column_name, row.data_type])
+  );
+};
+
+const getUsersSchema = async (client: any) => {
+  const usersColumns = await getTableColumns(client, 'users');
+  const hasUserColumn = (column: string) => usersColumns.has(column);
+
+  const phoneColumn = hasUserColumn('phone')
+    ? 'phone'
+    : hasUserColumn('phone_number')
+    ? 'phone_number'
+    : null;
+
+  const passwordColumn = hasUserColumn('password_hash')
+    ? 'password_hash'
+    : hasUserColumn('password')
+    ? 'password'
+    : null;
+
+  return {
+    usersColumns,
+    hasUserColumn,
+    phoneColumn,
+    passwordColumn,
+  };
+};
+
 export const getDoctors = async (req: AuthRequest, res: Response) => {
   const client = await pool.connect();
   
   try {
+    const { hasUserColumn, phoneColumn } = await getUsersSchema(client);
+    const selectFields = [
+      'id',
+      'email',
+      'first_name',
+      'last_name',
+      phoneColumn ? `${phoneColumn} AS phone_number` : 'NULL AS phone_number',
+      hasUserColumn('is_active') ? 'is_active' : 'true AS is_active',
+      hasUserColumn('created_at') ? 'created_at' : 'CURRENT_TIMESTAMP AS created_at',
+    ];
+
     const result = await client.query(
-      `SELECT id, email, first_name, last_name, phone_number, is_active, created_at
+      `SELECT ${selectFields.join(', ')}
        FROM users
        WHERE role = 'doctor'
        ORDER BY created_at DESC`
@@ -29,6 +84,11 @@ export const addDoctor = async (req: AuthRequest, res: Response) => {
   
   try {
     const { email, password, firstName, lastName, phoneNumber } = req.body;
+    const { hasUserColumn, phoneColumn, passwordColumn } = await getUsersSchema(client);
+
+    if (!passwordColumn) {
+      throw new Error('Cannot add doctor: neither password nor password_hash column exists');
+    }
 
     // Check if doctor exists
     const existing = await client.query('SELECT id FROM users WHERE email = $1', [email]);
@@ -39,12 +99,46 @@ export const addDoctor = async (req: AuthRequest, res: Response) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    const doctorRow: Record<string, unknown> = {
+      email,
+      first_name: firstName,
+      last_name: lastName,
+      role: 'doctor',
+      [passwordColumn]: hashedPassword,
+    };
+
+    if (phoneColumn && phoneNumber) {
+      doctorRow[phoneColumn] = phoneNumber;
+    }
+
+    if (hasUserColumn('is_active')) {
+      doctorRow.is_active = true;
+    }
+
+    if (hasUserColumn('email_verified')) {
+      doctorRow.email_verified = true;
+    }
+
+    const entries = Object.entries(doctorRow).filter(([, value]) => value !== undefined);
+    const columns = entries.map(([key]) => key);
+    const values = entries.map(([, value]) => value);
+    const placeholders = values.map((_, index) => `$${index + 1}`).join(', ');
+
+    const returningFields = [
+      'id',
+      'email',
+      'first_name',
+      'last_name',
+      phoneColumn ? `${phoneColumn} AS phone_number` : 'NULL AS phone_number',
+      hasUserColumn('created_at') ? 'created_at' : 'CURRENT_TIMESTAMP AS created_at',
+    ];
+
     // Insert doctor
     const result = await client.query(
-      `INSERT INTO users (email, password, first_name, last_name, phone_number, role)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, email, first_name, last_name, phone_number, created_at`,
-      [email, hashedPassword, firstName, lastName, phoneNumber, 'doctor']
+      `INSERT INTO users (${columns.join(', ')})
+       VALUES (${placeholders})
+       RETURNING ${returningFields.join(', ')}`,
+      values
     );
 
     logger.info(`Doctor added by admin ${req.user!.id}: ${email}`);
@@ -67,13 +161,49 @@ export const updateDoctor = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { firstName, lastName, phoneNumber, isActive } = req.body;
+    const { hasUserColumn, phoneColumn } = await getUsersSchema(client);
+
+    const updates: string[] = [];
+    const values: unknown[] = [];
+
+    values.push(firstName);
+    updates.push(`first_name = $${values.length}`);
+
+    values.push(lastName);
+    updates.push(`last_name = $${values.length}`);
+
+    if (phoneColumn) {
+      values.push(phoneNumber);
+      updates.push(`${phoneColumn} = $${values.length}`);
+    }
+
+    if (hasUserColumn('is_active')) {
+      values.push(isActive);
+      updates.push(`is_active = $${values.length}`);
+    }
+
+    if (hasUserColumn('updated_at')) {
+      updates.push('updated_at = CURRENT_TIMESTAMP');
+    }
+
+    values.push(id);
+    const idPlaceholder = `$${values.length}`;
+
+    const returningFields = [
+      'id',
+      'email',
+      'first_name',
+      'last_name',
+      phoneColumn ? `${phoneColumn} AS phone_number` : 'NULL AS phone_number',
+      hasUserColumn('is_active') ? 'is_active' : 'true AS is_active',
+    ];
 
     const result = await client.query(
       `UPDATE users
-       SET first_name = $1, last_name = $2, phone_number = $3, is_active = $4, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $5 AND role = 'doctor'
-       RETURNING id, email, first_name, last_name, phone_number, is_active`,
-      [firstName, lastName, phoneNumber, isActive, id]
+       SET ${updates.join(', ')}
+       WHERE id = ${idPlaceholder} AND role = 'doctor'
+       RETURNING ${returningFields.join(', ')}`,
+      values
     );
 
     if (result.rows.length === 0) {
@@ -128,6 +258,9 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
   const client = await pool.connect();
   
   try {
+    const accessLogsColumns = await getTableColumns(client, 'access_logs');
+    const hasAccessLogsColumn = (column: string) => accessLogsColumns.has(column);
+
     // Get counts
     const patientsCount = await client.query('SELECT COUNT(*) FROM users WHERE role = $1', ['patient']);
     const doctorsCount = await client.query('SELECT COUNT(*) FROM users WHERE role = $1', ['doctor']);
@@ -135,13 +268,21 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
     const accessRequestsCount = await client.query('SELECT COUNT(*) FROM access_requests WHERE status = $1', ['pending']);
 
     // Get recent activity
+    const accessTypeSelect = hasAccessLogsColumn('access_type') ? 'al.access_type' : 'NULL AS access_type';
+    const joinUser = hasAccessLogsColumn('user_id')
+      ? 'LEFT JOIN users u ON al.user_id::text = u.id::text'
+      : 'LEFT JOIN users u ON FALSE';
+    const joinPatient = hasAccessLogsColumn('patient_id')
+      ? 'LEFT JOIN users p ON al.patient_id::text = p.id::text'
+      : 'LEFT JOIN users p ON FALSE';
+
     const recentLogs = await client.query(
-      `SELECT al.action, al.access_type, al.created_at,
+      `SELECT al.action, ${accessTypeSelect}, al.created_at,
               u.first_name as user_first_name, u.last_name as user_last_name, u.role,
               p.first_name as patient_first_name, p.last_name as patient_last_name
        FROM access_logs al
-       JOIN users u ON al.user_id = u.id
-       JOIN users p ON al.patient_id = p.id
+       ${joinUser}
+       ${joinPatient}
        ORDER BY al.created_at DESC
        LIMIT 10`
     );
@@ -167,8 +308,12 @@ export const getPatients = async (req: AuthRequest, res: Response) => {
   const client = await pool.connect();
   
   try {
+    const { phoneColumn } = await getUsersSchema(client);
+
     const result = await client.query(
-      `SELECT id, email, first_name, last_name, phone_number, date_of_birth, created_at
+      `SELECT id, email, first_name, last_name,
+              ${phoneColumn ? `${phoneColumn} AS phone_number` : 'NULL AS phone_number'},
+              date_of_birth, created_at
        FROM users
        WHERE role = 'patient'
        ORDER BY created_at DESC

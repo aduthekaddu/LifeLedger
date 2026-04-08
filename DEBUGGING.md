@@ -439,7 +439,7 @@ curl http://localhost:5000/health
 # Login
 curl -X POST http://localhost:5000/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"patient@medsecure.com","password":"Test@123456"}'
+  -d '{"email":"patient@lifeledger.com","password":"Test@123456"}'
 
 # Get records (with token)
 curl http://localhost:5000/api/v1/records \

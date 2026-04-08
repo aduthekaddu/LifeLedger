@@ -8,6 +8,23 @@ export const regenerateQRCodes = async () => {
   try {
     console.log('Regenerating QR codes for patients...');
 
+    const qrColumnExistsResult = await client.query(
+      `
+        SELECT EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'users'
+            AND column_name = 'qr_code'
+        ) AS exists
+      `
+    );
+
+    if (!qrColumnExistsResult.rows[0]?.exists) {
+      logger.info('Skipping QR code regeneration: users.qr_code column does not exist in current schema');
+      return;
+    }
+
     // Find all patients (we'll update all to ensure UUID format)
     const result = await client.query(
       `SELECT id, email, first_name, last_name, qr_code FROM users 

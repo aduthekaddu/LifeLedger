@@ -1,17 +1,22 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import DashboardLayout from '@/components/DashboardLayout';
 import api from '@/lib/api';
 import { ArrowUpTrayIcon } from '@heroicons/react/24/outline';
 
 export default function DoctorUploadRecord() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [patients, setPatients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState('');
+  const [patientSearch, setPatientSearch] = useState('');
+  const [preselectedPatientLabel, setPreselectedPatientLabel] = useState('');
+  const [preselectedPatientId, setPreselectedPatientId] = useState('');
+  const preselectionAppliedRef = useRef(false);
   const [formData, setFormData] = useState({
     patientId: '',
     title: '',
@@ -24,6 +29,57 @@ export default function DoctorUploadRecord() {
   useEffect(() => {
     fetchPatients();
   }, []);
+
+  useEffect(() => {
+    if (preselectionAppliedRef.current || !patients.length) return;
+
+    preselectionAppliedRef.current = true;
+
+    const patientRef = (searchParams.get('patient') || '').trim().toLowerCase();
+    const legacyId = (searchParams.get('id') || '').trim();
+
+    if (!patientRef && !legacyId) return;
+
+    const matchedPatient = patients.find((patient) => {
+      const byPatientId = String(patient.patient_id || '').trim().toLowerCase() === patientRef;
+      const byEmail = String(patient.email || '').trim().toLowerCase() === patientRef;
+      const byLegacyId = legacyId ? String(patient.id) === legacyId : false;
+      return byPatientId || byEmail || byLegacyId;
+    });
+
+    if (!matchedPatient) return;
+
+    const patientDisplayLabel = `${matchedPatient.first_name} ${matchedPatient.last_name}${
+      matchedPatient.patient_id ? ` (${matchedPatient.patient_id})` : ''
+    }`;
+
+    const matchedId = String(matchedPatient.id);
+    setPreselectedPatientLabel(patientDisplayLabel);
+    setPreselectedPatientId(matchedId);
+    setFormData((prev) => ({
+      ...prev,
+      patientId: matchedId,
+    }));
+  }, [patients, searchParams]);
+
+  const filteredPatients = useMemo(() => {
+    const normalizedSearch = patientSearch.trim().toLowerCase();
+    if (!normalizedSearch) return patients;
+
+    return patients.filter((patient) => {
+      const fullName = `${patient.first_name || ''} ${patient.last_name || ''}`.toLowerCase();
+      const email = String(patient.email || '').toLowerCase();
+      const phone = String(patient.phone_number || '').toLowerCase();
+      const patientId = String(patient.patient_id || '').toLowerCase();
+
+      return (
+        fullName.includes(normalizedSearch) ||
+        email.includes(normalizedSearch) ||
+        phone.includes(normalizedSearch) ||
+        patientId.includes(normalizedSearch)
+      );
+    });
+  }, [patients, patientSearch]);
 
   const fetchPatients = async () => {
     try {
@@ -58,7 +114,7 @@ export default function DoctorUploadRecord() {
 
       setMessage('Record uploaded successfully');
       setFormData({
-        patientId: '',
+        patientId: preselectedPatientId || '',
         title: '',
         description: '',
         recordType: 'General',
@@ -87,6 +143,12 @@ export default function DoctorUploadRecord() {
       <div className="max-w-4xl mx-auto">
         <h1 className="text-3xl font-bold text-gray-900 mb-8">Upload Medical Record</h1>
 
+        {preselectedPatientLabel && (
+          <div className="mb-6 p-4 rounded-lg bg-blue-50 text-blue-800 border border-blue-200">
+            Uploading for: <span className="font-semibold">{preselectedPatientLabel}</span>
+          </div>
+        )}
+
         {message && (
           <div className={`mb-6 p-4 rounded-lg ${
             message.includes('success') ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
@@ -114,6 +176,19 @@ export default function DoctorUploadRecord() {
             <form onSubmit={handleUpload} className="space-y-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Find Patient
+                </label>
+                <input
+                  type="text"
+                  value={patientSearch}
+                  onChange={(e) => setPatientSearch(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 bg-white"
+                  placeholder="Search by name, patient ID, email, or phone"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Select Patient *
                 </label>
                 <select
@@ -123,9 +198,10 @@ export default function DoctorUploadRecord() {
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 bg-white"
                 >
                   <option value="">Choose a patient...</option>
-                  {patients.map((patient) => (
+                  {filteredPatients.map((patient) => (
                     <option key={patient.id} value={patient.id}>
-                      {patient.first_name} {patient.last_name} (ID: {patient.id})
+                      {patient.first_name} {patient.last_name}
+                      {patient.patient_id ? ` - ${patient.patient_id}` : ''}
                     </option>
                   ))}
                 </select>

@@ -10,12 +10,107 @@ import {
   sendEmergencyAccessSMS
 } from '../utils/notifications';
 
+type ColumnInfo = {
+  column_name: string;
+  data_type: string;
+};
+
+const getTableColumns = async (client: any, tableName: string) => {
+  const result = await client.query(
+    `
+      SELECT column_name, data_type
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = $1
+    `,
+    [tableName]
+  );
+
+  return new Map<string, string>(
+    result.rows.map((row: ColumnInfo) => [row.column_name, row.data_type])
+  );
+};
+
+const resolveUsersPhoneColumn = (usersColumns: Map<string, string>) => {
+  if (usersColumns.has('phone')) return 'phone';
+  if (usersColumns.has('phone_number')) return 'phone_number';
+  return null;
+};
+
+const isValueCompatibleWithColumn = (value: unknown, dataType: string | undefined) => {
+  if (value === undefined || value === null || !dataType) return false;
+
+  if (dataType === 'uuid') {
+    return typeof value === 'string' && value.includes('-');
+  }
+
+  if (dataType.includes('integer')) {
+    return typeof value === 'number' || (typeof value === 'string' && /^\d+$/.test(value));
+  }
+
+  return true;
+};
+
+const insertAccessLog = async (
+  client: any,
+  payload: {
+    userId?: unknown;
+    patientId?: unknown;
+    recordId?: unknown;
+    action: string;
+    accessType?: string;
+    blockchainTx?: string | null;
+  }
+) => {
+  const columnsMeta = await getTableColumns(client, 'access_logs');
+
+  const entries: Array<[string, unknown]> = [];
+
+  if (columnsMeta.has('user_id') && isValueCompatibleWithColumn(payload.userId, columnsMeta.get('user_id'))) {
+    entries.push(['user_id', payload.userId]);
+  }
+
+  if (columnsMeta.has('patient_id') && isValueCompatibleWithColumn(payload.patientId, columnsMeta.get('patient_id'))) {
+    entries.push(['patient_id', payload.patientId]);
+  }
+
+  if (columnsMeta.has('record_id') && isValueCompatibleWithColumn(payload.recordId, columnsMeta.get('record_id'))) {
+    entries.push(['record_id', payload.recordId]);
+  }
+
+  if (columnsMeta.has('action')) {
+    entries.push(['action', payload.action]);
+  }
+
+  if (columnsMeta.has('access_type') && payload.accessType) {
+    entries.push(['access_type', payload.accessType]);
+  }
+
+  if (columnsMeta.has('blockchain_tx') && payload.blockchainTx) {
+    entries.push(['blockchain_tx', payload.blockchainTx]);
+  }
+
+  if (!entries.length || !entries.some(([column]) => column === 'action')) {
+    return;
+  }
+
+  const columns = entries.map(([column]) => column);
+  const values = entries.map(([, value]) => value);
+  const placeholders = values.map((_, index) => `$${index + 1}`).join(', ');
+
+  await client.query(
+    `INSERT INTO access_logs (${columns.join(', ')}) VALUES (${placeholders})`,
+    values
+  );
+};
+
 export const requestAccess = async (req: AuthRequest, res: Response) => {
   const client = await pool.connect();
   
   try {
     const doctorId = req.user!.id;
     const { patientId, reason, isEmergency } = req.body;
+    const usersColumns = await getTableColumns(client, 'users');
+    const phoneColumn = resolveUsersPhoneColumn(usersColumns);
 
     // Check if request already exists
     const existing = await client.query(
@@ -33,7 +128,10 @@ export const requestAccess = async (req: AuthRequest, res: Response) => {
 
     // Get patient and doctor details for notification
     const patientResult = await client.query(
-      'SELECT email, first_name, last_name, phone_number FROM users WHERE id = $1',
+      `SELECT email, first_name, last_name,
+              ${phoneColumn ? phoneColumn : 'NULL'} AS phone_number
+       FROM users
+       WHERE id = $1`,
       [patientId]
     );
     
@@ -66,11 +164,12 @@ export const requestAccess = async (req: AuthRequest, res: Response) => {
     );
 
     // Log action
-    await client.query(
-      `INSERT INTO access_logs (user_id, patient_id, action, access_type)
-       VALUES ($1, $2, $3, $4)`,
-      [doctorId, patientId, 'REQUEST_ACCESS', isEmergency ? 'emergency' : 'normal']
-    );
+    await insertAccessLog(client, {
+      userId: doctorId,
+      patientId,
+      action: 'REQUEST_ACCESS',
+      accessType: isEmergency ? 'emergency' : 'normal',
+    });
 
     // Send email notification
     if (!isEmergency) {
@@ -145,11 +244,53 @@ export const respondToRequest = async (req: AuthRequest, res: Response) => {
 
     // Create consent record if approved
     if (status === 'approved') {
-      await client.query(
-        `INSERT INTO consents (patient_id, doctor_id, granted, granted_at)
-         VALUES ($1, $2, $3, CURRENT_TIMESTAMP)`,
-        [patientId, doctor_id, true]
-      );
+      const consentsColumns = await getTableColumns(client, 'consents');
+      const consentEntries: Array<[string, unknown]> = [];
+
+      if (consentsColumns.has('patient_id')) {
+        consentEntries.push(['patient_id', patientId]);
+      }
+
+      if (consentsColumns.has('doctor_id')) {
+        consentEntries.push(['doctor_id', doctor_id]);
+      } else if (consentsColumns.has('grantee_id')) {
+        consentEntries.push(['grantee_id', doctor_id]);
+      }
+
+      if (consentsColumns.has('grantee_type')) {
+        consentEntries.push(['grantee_type', 'doctor']);
+      }
+
+      if (consentsColumns.has('record_types')) {
+        consentEntries.push(['record_types', ['all']]);
+      }
+
+      if (consentsColumns.has('permissions')) {
+        consentEntries.push(['permissions', ['read']]);
+      }
+
+      if (consentsColumns.has('granted')) {
+        consentEntries.push(['granted', true]);
+      }
+
+      if (consentsColumns.has('status')) {
+        consentEntries.push(['status', 'active']);
+      }
+
+      if (consentsColumns.has('granted_at')) {
+        consentEntries.push(['granted_at', new Date()]);
+      }
+
+      if (consentEntries.length >= 2) {
+        const columns = consentEntries.map(([column]) => column);
+        const values = consentEntries.map(([, value]) => value);
+        const placeholders = values.map((_, index) => `$${index + 1}`).join(', ');
+
+        await client.query(
+          `INSERT INTO consents (${columns.join(', ')}) VALUES (${placeholders})`,
+          values
+        );
+      }
     }
 
     // Notify doctor
@@ -275,40 +416,51 @@ export const getAccessLogs = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const role = req.user!.role;
+    const accessLogsColumns = await getTableColumns(client, 'access_logs');
+    const hasAccessLogsColumn = (column: string) => accessLogsColumns.has(column);
+    const accessTypeSelect = hasAccessLogsColumn('access_type') ? 'al.access_type' : 'NULL AS access_type';
 
     let query = '';
     let params: any[] = [];
 
     if (role === 'patient') {
+      if (!hasAccessLogsColumn('patient_id')) {
+        return res.json({ logs: [] });
+      }
+
       query = `
-        SELECT al.id, al.action, al.access_type, al.created_at,
+        SELECT al.id, al.action, ${accessTypeSelect}, al.created_at,
                u.first_name, u.last_name, u.email, u.role
         FROM access_logs al
-        JOIN users u ON al.user_id = u.id
-        WHERE al.patient_id = $1
+        LEFT JOIN users u ON al.user_id::text = u.id::text
+        WHERE al.patient_id::text = $1::text
         ORDER BY al.created_at DESC
         LIMIT 100
       `;
       params = [userId];
     } else if (role === 'doctor') {
+      if (!hasAccessLogsColumn('user_id')) {
+        return res.json({ logs: [] });
+      }
+
       query = `
-        SELECT al.id, al.action, al.access_type, al.created_at,
+        SELECT al.id, al.action, ${accessTypeSelect}, al.created_at,
                p.first_name as patient_first_name, p.last_name as patient_last_name
         FROM access_logs al
-        JOIN users p ON al.patient_id = p.id
-        WHERE al.user_id = $1
+        LEFT JOIN users p ON ${hasAccessLogsColumn('patient_id') ? 'al.patient_id::text = p.id::text' : 'FALSE'}
+        WHERE al.user_id::text = $1::text
         ORDER BY al.created_at DESC
         LIMIT 100
       `;
       params = [userId];
     } else if (role === 'admin') {
       query = `
-        SELECT al.id, al.action, al.access_type, al.created_at,
+        SELECT al.id, al.action, ${accessTypeSelect}, al.created_at,
                u.first_name as user_first_name, u.last_name as user_last_name, u.role,
                p.first_name as patient_first_name, p.last_name as patient_last_name
         FROM access_logs al
-        JOIN users u ON al.user_id = u.id
-        JOIN users p ON al.patient_id = p.id
+        LEFT JOIN users u ON ${hasAccessLogsColumn('user_id') ? 'al.user_id::text = u.id::text' : 'FALSE'}
+        LEFT JOIN users p ON ${hasAccessLogsColumn('patient_id') ? 'al.patient_id::text = p.id::text' : 'FALSE'}
         ORDER BY al.created_at DESC
         LIMIT 200
       `;
@@ -332,6 +484,8 @@ export const emergencyAccess = async (req: AuthRequest, res: Response) => {
   try {
     const doctorId = req.user!.id;
     const { qrCode, reason } = req.body;
+    const usersColumns = await getTableColumns(client, 'users');
+    const phoneColumn = resolveUsersPhoneColumn(usersColumns);
 
     // Find patient by QR code
     const patientResult = await client.query(
@@ -361,11 +515,12 @@ export const emergencyAccess = async (req: AuthRequest, res: Response) => {
     );
 
     // Log emergency access
-    await client.query(
-      `INSERT INTO access_logs (user_id, patient_id, action, access_type)
-       VALUES ($1, $2, $3, $4)`,
-      [doctorId, patient.id, 'EMERGENCY_ACCESS', 'qr_code']
-    );
+    await insertAccessLog(client, {
+      userId: doctorId,
+      patientId: patient.id,
+      action: 'EMERGENCY_ACCESS',
+      accessType: 'qr_code',
+    });
 
     // Notify patient
     await client.query(
@@ -385,7 +540,7 @@ export const emergencyAccess = async (req: AuthRequest, res: Response) => {
     // Send emergency SMS notification if phone number available
     if (patient.email) {
       const patientPhone = await client.query(
-        'SELECT phone_number FROM users WHERE id = $1',
+        `SELECT ${phoneColumn ? phoneColumn : 'NULL'} AS phone_number FROM users WHERE id = $1`,
         [patient.id]
       );
       

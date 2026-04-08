@@ -27,7 +27,11 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
 
     next();
   } catch (error) {
-    logger.error('Authentication error:', error);
+    if (error instanceof jwt.JsonWebTokenError || error instanceof jwt.TokenExpiredError) {
+      logger.warn(`Authentication failed: ${error.message}`);
+    } else {
+      logger.error('Authentication error:', error);
+    }
     return res.status(401).json({ error: 'Invalid token' });
   }
 };

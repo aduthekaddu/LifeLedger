@@ -21,14 +21,29 @@ export default function Login() {
 
     try {
       const response = await api.post('/auth/login', formData);
-      localStorage.setItem('token', response.data.token);
-      localStorage.setItem('user', JSON.stringify(response.data.user));
-      
-      // Fetch full profile to get QR code
-      const profileResponse = await api.get('/auth/profile');
-      localStorage.setItem('user', JSON.stringify(profileResponse.data.user));
-      
-      router.push(`/${response.data.user.role}/dashboard`);
+      const token = response.data?.token;
+      const user = response.data?.user;
+
+      if (!token || !user?.role) {
+        throw new Error('Invalid login response');
+      }
+
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(user));
+
+      router.replace(`/${user.role}/dashboard`);
+
+      // Refresh full profile in background; never block successful login redirect.
+      api
+        .get('/auth/profile')
+        .then((profileResponse) => {
+          if (profileResponse.data?.user) {
+            localStorage.setItem('user', JSON.stringify(profileResponse.data.user));
+          }
+        })
+        .catch(() => {
+          // Keep login success state even if profile hydration fails.
+        });
     } catch (err: any) {
       setError(err.response?.data?.error || 'Login failed');
     } finally {

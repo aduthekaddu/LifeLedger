@@ -133,9 +133,9 @@ echo ""
 # Display test accounts
 echo "👤 Test Accounts:"
 echo "================================"
-echo "Admin:   admin@medsecure.com / Test@123456"
-echo "Doctor:  doctor@medsecure.com / Test@123456"
-echo "Patient: patient@medsecure.com / Test@123456"
+echo "Admin:   admin@lifeledger.com / Test@123456"
+echo "Doctor:  aditya.singh@lifeledger.com / Test@123456"
+echo "Patient: patient@lifeledger.com / Test@123456"
 echo ""
 
 echo -e "${GREEN}✅ Setup complete! Your LifeLedger system is ready.${NC}"

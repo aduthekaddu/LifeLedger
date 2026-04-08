@@ -15,6 +15,7 @@ export default function ProfilePage({ role }: ProfilePageProps) {
   const [editing, setEditing] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
   const [message, setMessage] = useState('');
+  const [loadError, setLoadError] = useState('');
   
   const [formData, setFormData] = useState({
     firstName: '',
@@ -37,6 +38,7 @@ export default function ProfilePage({ role }: ProfilePageProps) {
 
   const fetchProfile = async () => {
     try {
+      setLoadError('');
       const response = await api.get('/auth/profile');
       setUser(response.data.user);
       setFormData({
@@ -49,6 +51,7 @@ export default function ProfilePage({ role }: ProfilePageProps) {
       });
     } catch (error) {
       console.error('Error fetching profile:', error);
+      setLoadError('Unable to load profile. Please make sure the backend is running and try again.');
     } finally {
       setLoading(false);
     }
@@ -107,6 +110,26 @@ export default function ProfilePage({ role }: ProfilePageProps) {
     );
   }
 
+  if (!user) {
+    return (
+      <div className="max-w-4xl mx-auto">
+        <div className="glass rounded-2xl border border-red-200 bg-red-50 p-6">
+          <h2 className="text-xl font-semibold text-red-800 mb-2">Profile unavailable</h2>
+          <p className="text-red-700">{loadError || 'Could not load your profile right now.'}</p>
+          <button
+            type="button"
+            onClick={fetchProfile}
+            className="mt-4 px-4 py-2 rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 transition"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const patientId = user.patientId || user.patient_id;
+
   return (
     <div className="max-w-4xl mx-auto">
       <motion.div
@@ -164,7 +187,7 @@ export default function ProfilePage({ role }: ProfilePageProps) {
               {[
                 { label: 'Name', value: `${user.firstName || user.first_name} ${user.lastName || user.last_name}` },
                 { label: 'Email', value: user.email },
-                ...(user.role === 'patient' && user.patientId ? [{ label: 'Patient ID', value: <span className="font-mono font-bold text-lg gradient-text">{user.patientId}</span> }] : []),
+                ...(user.role === 'patient' && patientId ? [{ label: 'Patient ID', value: <span className="font-mono font-bold text-lg gradient-text">{patientId}</span> }] : []),
                 { label: 'Role', value: <span className="capitalize px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm font-medium">{user.role}</span> },
                 { label: 'Phone', value: user.phoneNumber || user.phone_number || 'Not provided' },
                 { label: 'Date of Birth', value: user.dateOfBirth || user.date_of_birth ? new Date(user.dateOfBirth || user.date_of_birth).toLocaleDateString() : 'Not provided' },

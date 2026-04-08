@@ -140,7 +140,9 @@ export default function DoctorSearch() {
                         <h3 className="font-semibold text-gray-900 text-lg">
                           {patient.first_name} {patient.last_name}
                         </h3>
-                        <p className="text-sm text-gray-600">ID: {patient.id}</p>
+                        {patient.patient_id && (
+                          <p className="text-sm text-blue-700">Patient ID: {patient.patient_id}</p>
+                        )}
                         <p className="text-sm text-gray-600">{patient.email}</p>
                         {patient.phone_number && (
                           <p className="text-sm text-gray-600">{patient.phone_number}</p>

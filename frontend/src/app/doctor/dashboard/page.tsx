@@ -156,7 +156,11 @@ export default function DoctorDashboard() {
                       <p className="text-sm text-gray-600">{patient.email}</p>
                     </div>
                     <a
-                      href={`/doctor/patients?id=${patient.id}`}
+                      href={
+                        patient.patient_id || patient.email
+                          ? `/doctor/patients?patient=${encodeURIComponent((patient.patient_id || patient.email).toString())}`
+                          : '/doctor/patients'
+                      }
                       className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg hover:shadow-lg hover:scale-105 transition-all duration-200 font-medium flex items-center space-x-1"
                     >
                       <span>View Records</span>

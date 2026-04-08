@@ -1,48 +1,60 @@
-F# LifeLedger Setup Guide
+# LifeLedger Setup Guide (Current)
 
-Complete setup instructions for the LifeLedger medical record management system.
+This guide reflects the current codebase and scripts in this repository.
 
-## Prerequisites
+## 1. What You Are Running
 
-- Node.js 18+ and npm
-- PostgreSQL 14+
-- Docker and Docker Compose (optional, for blockchain/IPFS)
+LifeLedger has three main parts:
+
+- Backend API: Express + TypeScript + PostgreSQL
+- Frontend: Next.js app
+- Optional infrastructure: IPFS + local blockchain (Hardhat)
+
+You can run in two common modes:
+
+- Local app mode: Backend + Frontend locally, PostgreSQL locally, optional IPFS/Hardhat via Docker
+- Full Docker mode: PostgreSQL + IPFS + Hardhat + Backend + Frontend via docker-compose-full.yml
+
+## 2. Prerequisites
+
+- Node.js 18+ (Node 20+ recommended)
+- npm
+- PostgreSQL 14+ (15+ recommended)
+- Docker Desktop or Docker Engine (optional but recommended)
 - Git
 
-## Quick Start (Basic Setup)
-
-### 1. Clone and Install
+## 3. Clone And Install
 
 ```bash
-git clone <repository-url>
-cd "Life Ledger"
+git clone <your-repo-url>
+cd LifeLedger
 
-# Install backend dependencies
 cd backend
 npm install
 
-# Install frontend dependencies
 cd ../frontend
+npm install
+
+cd ../blockchain
 npm install
 ```
 
-### 2. Database Setup
+## 4. Create The Database
 
 ```bash
-# Create PostgreSQL database
 psql -U postgres
 CREATE DATABASE medsecure;
 \q
-
-# Database will be initialized automatically on first run
 ```
 
-### 3. Backend Configuration
+If your postgres user is not postgres, use your own user and set matching values in backend/.env.
 
-Create `backend/.env`:
+## 5. Backend Environment
+
+Create backend/.env:
 
 ```env
-# Server
+# Core
 NODE_ENV=development
 PORT=5000
 API_VERSION=v1
@@ -53,414 +65,201 @@ DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=medsecure
 DB_USER=postgres
-DB_PASSWORD=your_password
+DB_PASSWORD=your_postgres_password
 
-# JWT
-JWT_SECRET=your_jwt_secret_here
-JWT_EXPIRES_IN=7d
+# Auth + encryption
+JWT_SECRET=replace_with_a_strong_secret
+ENCRYPTION_KEY=replace_with_a_strong_key
 
-# Encryption
-ENCRYPTION_KEY=your_encryption_key_here
-
-# CORS
+# API + uploads
 CORS_ORIGIN=http://localhost:3000
 FRONTEND_URL=http://localhost:3000
+MAX_FILE_SIZE=10485760
+UPLOAD_DIR=./uploads
+LOG_LEVEL=info
 
 # AI (Google Gemini)
 GEMINI_API_KEY=your_gemini_api_key
 
-# Email (Gmail SMTP)
+# Email (optional)
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=your_email@gmail.com
 SMTP_PASS=your_app_password
 
-# SMS (Twilio)
-TWILIO_ACCOUNT_SID=your_account_sid
-TWILIO_AUTH_TOKEN=your_auth_token
-TWILIO_PHONE_NUMBER=your_twilio_number
+# SMS (optional)
+TWILIO_ACCOUNT_SID=
+TWILIO_AUTH_TOKEN=
+TWILIO_PHONE_NUMBER=
 
-# File Upload
-MAX_FILE_SIZE=10485760
-UPLOAD_DIR=./uploads
+# IPFS (optional)
+IPFS_HOST=localhost
+IPFS_PORT=5001
+IPFS_PROTOCOL=http
+
+# Blockchain (optional)
+BLOCKCHAIN_RPC=http://localhost:8545
+CONTRACT_ADDRESS=
 ```
 
-### 4. Frontend Configuration
+Notes:
 
-Create `frontend/.env.local`:
+- AI features are disabled when GEMINI_API_KEY is missing.
+- If SEED_DATABASE=true, startup seeds test accounts if missing.
+
+## 6. Frontend Environment
+
+Create frontend/.env.local:
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:5000/api/v1
-NEXT_PUBLIC_APP_NAME=LifeLedger
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-NEXT_PUBLIC_MAX_FILE_SIZE=10485760
+NEXT_PUBLIC_API_TIMEOUT=30000
 ```
 
-### 5. Start Services
+## 7. Start In Local App Mode
+
+Start backend:
 
 ```bash
-# Terminal 1: Start backend
 cd backend
 npm run dev
+```
 
-# Terminal 2: Start frontend
+Start frontend:
+
+```bash
 cd frontend
 npm run dev
 ```
 
-Access the application at `http://localhost:3000`
+Open:
 
-## Test Accounts
+- Frontend: http://localhost:3000
+- Backend health: http://localhost:5000/health
 
-The system seeds with these test accounts:
+## 8. Optional: Start IPFS + Blockchain (Docker)
 
-| Role | Email | Password | Patient ID |
-|------|-------|----------|------------|
-| Admin | admin@medsecure.com | Test@123456 | - |
-| Doctor | doctor@medsecure.com | Test@123456 | - |
-| Patient | patient@medsecure.com | Test@123456 | PT-2024-0001 |
-
-## Advanced Setup (Blockchain + IPFS)
-
-### Option 1: Using Docker (Recommended)
-
-This is the easiest way to run IPFS and Blockchain without installing them locally.
-
-#### 1. Start Services with Docker
+From repo root:
 
 ```bash
-# Make script executable (first time only)
-chmod +x start-services.sh
-
-# Start IPFS and Blockchain containers
 ./start-services.sh
 ```
 
 Or manually:
 
 ```bash
-# Start services
 docker compose up -d
-
-# Check status
-docker compose ps
-
-# View logs
-docker compose logs -f ipfs
-docker compose logs -f hardhat
-
-# Stop services
-docker compose down
 ```
 
-#### 2. Deploy Smart Contract
+Deploy contract:
 
 ```bash
 cd blockchain
 npm run deploy
 ```
 
-Copy the contract address from output and update `backend/.env`:
+This writes blockchain/deployment.json. Backend reads this automatically on startup.
 
-```env
-BLOCKCHAIN_ENABLED=true
-BLOCKCHAIN_RPC=http://localhost:8545
-CONTRACT_ADDRESS=0x5FbDB2315678afecb367f032d93F642f64180aa3
-```
+If needed, explicitly set CONTRACT_ADDRESS in backend/.env.
 
-#### 3. Update IPFS Configuration
+## 9. Optional: Full Docker Mode
 
-Update `backend/.env`:
-
-```env
-IPFS_HOST=localhost
-IPFS_PORT=5001
-IPFS_PROTOCOL=http
-```
-
-#### 4. Run Database Migration
+Run everything in containers:
 
 ```bash
-cd backend
-npm run migrate:blockchain
-```
-
-#### 5. Restart Backend
-
-Restart the backend server to enable blockchain and IPFS features.
-
-### Option 2: Manual Installation (Without Docker)
-
-If you prefer not to use Docker, install IPFS and Hardhat locally.
-
-#### 1. Install IPFS
-
-**Linux:**
-```bash
-wget https://dist.ipfs.tech/kubo/v0.24.0/kubo_v0.24.0_linux-amd64.tar.gz
-tar -xvzf kubo_v0.24.0_linux-amd64.tar.gz
-cd kubo
-sudo bash install.sh
-ipfs --version
-```
-
-**macOS:**
-```bash
-brew install ipfs
-```
-
-**Initialize and Start:**
-```bash
-ipfs init
-ipfs daemon
-```
-
-#### 2. Install Blockchain Dependencies
-
-```bash
-cd blockchain
-npm install
-```
-
-#### 3. Start Local Blockchain
-
-```bash
-# Terminal: Start Hardhat node
-cd blockchain
-npx hardhat node
-```
-
-#### 4. Deploy Smart Contract
-
-```bash
-# In another terminal
-cd blockchain
-npm run deploy
-```
-
-Copy the contract address and update `backend/.env`:
-
-```env
-BLOCKCHAIN_ENABLED=true
-BLOCKCHAIN_RPC=http://localhost:8545
-CONTRACT_ADDRESS=0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
-```
-
-#### 5. Update IPFS Configuration
-
-Update `backend/.env`:
-
-```env
-IPFS_HOST=localhost
-IPFS_PORT=5001
-IPFS_PROTOCOL=http
-```
-
-#### 6. Run Database Migration
-
-```bash
-cd backend
-npm run migrate:blockchain
-```
-
-#### 7. Restart Backend
-
-Restart the backend server to enable blockchain and IPFS features.
-
-## Docker Setup (Alternative)
-
-### Full Stack with Docker
-
-Use Docker Compose to run everything (database, backend, frontend, IPFS, blockchain):
-
-```bash
-# Start all services
 docker compose -f docker-compose-full.yml up -d
+```
 
-# View logs
+Check logs:
+
+```bash
 docker compose -f docker-compose-full.yml logs -f
+```
 
-# Stop services
+Stop:
+
+```bash
 docker compose -f docker-compose-full.yml down
 ```
 
-### Services Only (Recommended for Development)
+## 10. Current Test Accounts
 
-Run only IPFS and Blockchain in Docker, while running backend/frontend locally:
+- Admin: admin@lifeledger.com / Test@123456
+- Doctor: aditya.singh@lifeledger.com / Test@123456
+- Patient: patient@lifeledger.com / Test@123456
+
+## 11. Verify Setup Quickly
+
+Backend health:
 
 ```bash
-# Start IPFS and Blockchain
-./start-services.sh
-
-# Or manually
-docker compose up -d
-
-# Check status
-docker compose ps
-
-# View logs
-docker compose logs -f
-
-# Stop services
-docker compose down
+curl http://localhost:5000/health
 ```
 
-This approach gives you:
-- Fast development with hot reload
-- Easy debugging
-- IPFS and Blockchain in containers
-- Backend and Frontend running locally
-
-## API Keys Setup
-
-### Google Gemini API Key
-
-1. Go to [Google AI Studio](https://makersuite.google.com/app/apikey)
-2. Create a new API key
-3. Add to `backend/.env` as `GEMINI_API_KEY`
-
-### Gmail SMTP (for emails)
-
-1. Enable 2FA on your Gmail account
-2. Generate an App Password: [Google Account Settings](https://myaccount.google.com/apppasswords)
-3. Add to `backend/.env` as `SMTP_USER` and `SMTP_PASS`
-
-### Twilio (for SMS)
-
-1. Sign up at [Twilio](https://www.twilio.com/)
-2. Get Account SID, Auth Token, and Phone Number
-3. Add to `backend/.env`
-
-## Verification
-
-Test the setup:
+Frontend reachable:
 
 ```bash
-# Check backend health
-curl http://localhost:5000/health
+curl -I http://localhost:3000
+```
 
-# Check IPFS (if using Docker)
+IPFS (if running):
+
+```bash
 curl http://localhost:5001/api/v0/version
+```
 
-# Check blockchain (if using Docker)
+Blockchain JSON-RPC (if running):
+
+```bash
 curl -X POST http://localhost:8545 \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
-
-# Check frontend
-open http://localhost:3000
-
-# Login with test account
-# Email: patient@medsecure.com
-# Password: Test@123456
 ```
 
-## Docker Commands Reference
+## 12. Helpful Commands
+
+Run backend seed manually:
 
 ```bash
-# Start services
-docker compose up -d
-
-# Stop services
-docker compose down
-
-# View all logs
-docker compose logs -f
-
-# View specific service logs
-docker compose logs -f ipfs
-docker compose logs -f hardhat
-
-# Restart a service
-docker compose restart ipfs
-
-# Check service status
-docker compose ps
-
-# Remove all containers and volumes
-docker compose down -v
+cd backend
+npm run seed
 ```
 
-## Troubleshooting
-
-### Database Connection Issues
+Regenerate patient QR values:
 
 ```bash
-# Check PostgreSQL is running
-sudo systemctl status postgresql
-
-# Test connection
-psql -U postgres -d medsecure
+cd backend
+npm run regenerate-qr
 ```
 
-### Port Already in Use
+Test SMTP config:
 
 ```bash
-# Find process using port 5000
-lsof -i :5000
-kill -9 <PID>
+cd backend
+npm run test-email
+```
 
-# Find process using port 3000
+## 13. Troubleshooting
+
+Port already in use:
+
+```bash
 lsof -i :3000
-kill -9 <PID>
+lsof -i :5000
+lsof -i :5432
 ```
 
-### IPFS Not Starting
+Backend cannot connect to DB:
 
-**Docker:**
-```bash
-# Check IPFS logs
-docker compose logs ipfs
+- Confirm postgres is running.
+- Confirm backend/.env DB_* values are correct.
+- Confirm medsecure database exists.
 
-# Restart IPFS
-docker compose restart ipfs
+AI insight generation returns unavailable/high demand:
 
-# Check if port is in use
-lsof -i :5001
-```
+- This is a provider-side temporary condition from Gemini.
+- Retry the request after a short delay.
 
-**Local Installation:**
-```bash
-# Initialize IPFS (first time only)
-ipfs init
+Hydration mismatch with class like vsc-initialized in dev:
 
-# Check IPFS version
-ipfs version
-
-# Start daemon
-ipfs daemon
-
-# Test connection
-curl http://localhost:5001/api/v0/version
-```
-
-### Blockchain Deployment Failed
-
-**Docker:**
-```bash
-# Check Hardhat logs
-docker compose logs hardhat
-
-# Restart blockchain
-docker compose restart hardhat
-
-# Redeploy contract
-cd blockchain
-npm run deploy
-```
-
-**Local Installation:**
-```bash
-# Clean and redeploy
-cd blockchain
-rm -rf artifacts cache
-npx hardhat clean
-npx hardhat node
-npm run deploy
-```
-
-## Next Steps
-
-- Read [ARCHITECTURE.md](./ARCHITECTURE.md) for system design
-- Read [DEBUGGING.md](./DEBUGGING.md) for troubleshooting
-- Read [FLOW.md](./FLOW.md) for user workflows
+- This is usually caused by browser extensions altering DOM before React hydration.
