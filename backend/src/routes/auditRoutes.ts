@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { query } from '../db/client';
 import { requireAuth } from '../middleware/auth';
 import { assertPatientAccess } from '../services/accessService';
+import { verifyPatientAuditChain } from '../services/auditService';
 import { asyncHandler } from '../utils/asyncHandler';
 
 const router = Router();
@@ -17,7 +18,7 @@ router.get(
     const result = await query(
       `SELECT a.id, a.actor_id, actor.full_name AS actor_name, a.patient_id,
               a.record_id, a.action, a.purpose, a.metadata, a.ip_address,
-              a.user_agent, a.created_at
+              a.user_agent, a.sequence_id, a.previous_hash, a.event_hash, a.created_at
        FROM audit_events a
        LEFT JOIN users actor ON actor.id = a.actor_id
        WHERE a.patient_id = $1
@@ -27,6 +28,19 @@ router.get(
     );
 
     res.json({ auditEvents: result.rows });
+  }),
+);
+
+router.get(
+  '/verify',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const user = req.user!;
+    const patientId = String(req.query.patientId ?? user.id);
+    await assertPatientAccess(user, patientId, 'audit');
+
+    const verification = await verifyPatientAuditChain(patientId);
+    res.json({ patientId, verification });
   }),
 );
 
