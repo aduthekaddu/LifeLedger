@@ -1,33 +1,43 @@
-import winston from 'winston';
-import path from 'path';
+const sensitiveKeys = ['password', 'token', 'secret', 'authorization', 'cookie'];
 
-const logger = winston.createLogger({
-  level: process.env.LOG_LEVEL || 'info',
-  format: winston.format.combine(
-    winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-    winston.format.errors({ stack: true }),
-    winston.format.splat(),
-    winston.format.json()
-  ),
-  defaultMeta: { service: 'medsecure-api' },
-  transports: [
-    new winston.transports.File({ 
-      filename: path.join(__dirname, '../../logs/error.log'), 
-      level: 'error' 
-    }),
-    new winston.transports.File({ 
-      filename: path.join(__dirname, '../../logs/combined.log') 
-    }),
-  ],
-});
+function redact(value: unknown): unknown {
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
 
-if (process.env.NODE_ENV !== 'production') {
-  logger.add(new winston.transports.Console({
-    format: winston.format.combine(
-      winston.format.colorize(),
-      winston.format.simple()
-    ),
-  }));
+  if (Array.isArray(value)) {
+    return value.map(redact);
+  }
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+      key,
+      sensitiveKeys.some((sensitive) => key.toLowerCase().includes(sensitive))
+        ? '[redacted]'
+        : redact(item),
+    ]),
+  );
 }
 
-export default logger;
+function write(level: 'info' | 'warn' | 'error', message: string, meta?: unknown): void {
+  const payload = {
+    level,
+    message,
+    time: new Date().toISOString(),
+    ...(meta ? { meta: redact(meta) } : {}),
+  };
+  const line = JSON.stringify(payload);
+  if (level === 'error') {
+    console.error(line);
+  } else if (level === 'warn') {
+    console.warn(line);
+  } else {
+    console.log(line);
+  }
+}
+
+export const logger = {
+  info: (message: string, meta?: unknown) => write('info', message, meta),
+  warn: (message: string, meta?: unknown) => write('warn', message, meta),
+  error: (message: string, meta?: unknown) => write('error', message, meta),
+};

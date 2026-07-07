@@ -1,32 +1,19 @@
-FROM node:22-alpine AS builder
-
+FROM node:20-alpine AS deps
 WORKDIR /app
-
-# Copy package files
 COPY package*.json ./
+RUN npm install
 
-# Install dependencies
-RUN npm ci
-
-# Copy source code
+FROM deps AS build
 COPY . .
-
-# Build application
 RUN npm run build
 
-# Production image
-FROM node:18-alpine
-
+FROM node:20-alpine AS runner
 WORKDIR /app
-
-# Copy built application
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/public ./public
-
-# Expose port
+ENV NODE_ENV=production
+COPY --from=build /app/package*.json ./
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/.next ./.next
+COPY --from=build /app/public ./public
+RUN npm prune --omit=dev
 EXPOSE 3000
-
-# Start application
 CMD ["npm", "start"]

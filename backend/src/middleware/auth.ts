@@ -1,51 +1,95 @@
-import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
-import logger from '../config/logger';
+import jwt, { type SignOptions } from 'jsonwebtoken';
+import type { NextFunction, Request, Response } from 'express';
+import { env } from '../config/env';
+import { unauthorized, forbidden } from '../utils/errors';
+import type { AuthUser, Role } from '../types/domain';
 
-export interface AuthRequest extends Request {
-  user?: {
-    id: number;
-    email: string;
-    role: string;
-  };
+interface JwtPayload {
+  sub: string;
+  email: string;
+  role: Role;
+  fullName: string;
 }
 
-export const authenticate = (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const token = req.headers.authorization?.split(' ')[1];
-
-    if (!token) {
-      return res.status(401).json({ error: 'No token provided' });
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as any;
-    req.user = {
-      id: decoded.id,
-      email: decoded.email,
-      role: decoded.role,
-    };
-
-    next();
-  } catch (error) {
-    if (error instanceof jwt.JsonWebTokenError || error instanceof jwt.TokenExpiredError) {
-      logger.warn(`Authentication failed: ${error.message}`);
-    } else {
-      logger.error('Authentication error:', error);
-    }
-    return res.status(401).json({ error: 'Invalid token' });
+function parseCookies(cookieHeader?: string): Record<string, string> {
+  if (!cookieHeader) {
+    return {};
   }
-};
 
-export const authorize = (...roles: string[]) => {
-  return (req: AuthRequest, res: Response, next: NextFunction) => {
+  return Object.fromEntries(
+    cookieHeader.split(';').map((cookie) => {
+      const [key, ...value] = cookie.trim().split('=');
+      return [key, decodeURIComponent(value.join('='))];
+    }),
+  );
+}
+
+function tokenFromRequest(req: Request): string | undefined {
+  const authorization = req.headers.authorization;
+  if (authorization?.startsWith('Bearer ')) {
+    return authorization.slice('Bearer '.length);
+  }
+
+  return parseCookies(req.headers.cookie).ll_session;
+}
+
+export function signSession(user: AuthUser): string {
+  return jwt.sign(
+    {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      fullName: user.fullName,
+    },
+    env.jwtSecret,
+    { expiresIn: env.jwtExpiresIn as SignOptions['expiresIn'] },
+  );
+}
+
+export function attachSessionCookie(res: Response, token: string): void {
+  res.cookie('ll_session', token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: env.nodeEnv === 'production',
+    maxAge: 8 * 60 * 60 * 1000,
+    path: '/',
+  });
+}
+
+export function clearSessionCookie(res: Response): void {
+  res.clearCookie('ll_session', { path: '/' });
+}
+
+export function requireAuth(req: Request, _res: Response, next: NextFunction): void {
+  const token = tokenFromRequest(req);
+  if (!token) {
+    throw unauthorized();
+  }
+
+  try {
+    const payload = jwt.verify(token, env.jwtSecret) as JwtPayload;
+    req.user = {
+      id: payload.sub,
+      email: payload.email,
+      role: payload.role,
+      fullName: payload.fullName,
+    };
+    next();
+  } catch {
+    throw unauthorized('Invalid or expired session');
+  }
+}
+
+export function requireRole(...roles: Role[]) {
+  return (req: Request, _res: Response, next: NextFunction): void => {
     if (!req.user) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      throw unauthorized();
     }
 
     if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ error: 'Forbidden: Insufficient permissions' });
+      throw forbidden('Your role cannot perform this action');
     }
 
     next();
   };
-};
+}

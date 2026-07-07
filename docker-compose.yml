@@ -1,28 +1,54 @@
-version: '3.8'
-
 services:
-  # IPFS Node (Local)
-  ipfs:
-    image: ipfs/kubo:latest
-    container_name: lifeledger-ipfs
+  postgres:
+    image: postgres:16-alpine
+    container_name: lifeledger-db
     environment:
-      - IPFS_PROFILE=server
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: lifeledger
     ports:
-      - "4001:4001"     # P2P
-      - "5001:5001"     # API
-      - "8080:8080"     # Gateway
+      - "5432:5432"
     volumes:
-      - ipfs_data:/data/ipfs
-      - ipfs_staging:/export
-    networks:
-      - lifeledger-network
-    restart: unless-stopped
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d lifeledger"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # Hardhat Node (Local Blockchain)
-  hardhat:
-    build:
-      context: ./blockchain
-      dockerfile: Dockerfile
+  backend:
+    build: ./backend
+    container_name: lifeledger-api
+    environment:
+      NODE_ENV: development
+      PORT: 5000
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/lifeledger
+      JWT_SECRET: local-dev-secret-change-before-real-use-64-characters-long
+      CORS_ORIGIN: http://localhost:3000
+      FRONTEND_URL: http://localhost:3000
+      UPLOAD_DIR: /app/private-uploads
+    ports:
+      - "5000:5000"
+    volumes:
+      - uploads_data:/app/private-uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: sh -c "npm run migrate && npm run start"
+
+  frontend:
+    build: ./frontend
+    container_name: lifeledger-web
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:5000/api/v1
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  uploads_data:
     container_name: lifeledger-blockchain
     ports:
       - "8545:8545"

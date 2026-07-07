@@ -1,0 +1,24 @@
+{
+  "name": "lifeledger",
+  "version": "2.0.0",
+  "private": true,
+  "description": "FHIR-first personal health wallet with consent-scoped access and emergency-ready records.",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "dev:backend": "npm run dev --workspace backend",
+    "dev:frontend": "npm run dev --workspace frontend",
+    "migrate": "npm run migrate --workspace backend",
+    "seed": "npm run seed --workspace backend"
+  },
+  "engines": {
+    "node": ">=20.11.0",
+    "npm": ">=10.0.0"
+  }
+}

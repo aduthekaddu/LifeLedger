@@ -1,25 +1,19 @@
-FROM node:22-alpine
-
+FROM node:20-alpine AS deps
 WORKDIR /app
-
-# Copy package files
 COPY package*.json ./
+RUN npm install
+
+FROM deps AS build
 COPY tsconfig.json ./
-
-# Install dependencies
-RUN npm ci --only=production
-
-# Copy source code
 COPY src ./src
-
-# Build TypeScript
 RUN npm run build
 
-# Create necessary directories
-RUN mkdir -p uploads logs
-
-# Expose port
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=build /app/package*.json ./
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/dist ./dist
+RUN npm prune --omit=dev && mkdir -p private-uploads
 EXPOSE 5000
-
-# Start server
-CMD ["npm", "start"]
+CMD ["node", "dist/server.js"]

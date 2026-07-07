@@ -1,7 +1,9 @@
 # Dependencies
 node_modules/
-package-lock.json
 yarn.lock
+
+# Local learning notes
+docs/
 
 # Environment variables
 .env
@@ -13,6 +15,7 @@ dist/
 build/
 .next/
 out/
+*.tsbuildinfo
 
 # Logs
 logs/
@@ -46,9 +49,7 @@ uploads/
 *.sqlite
 
 # Blockchain
-blockchain/network/organizations/
-blockchain/network/channel-artifacts/
-blockchain/network/system-genesis-block/
+blockchain/
 
 # Testing
 coverage/

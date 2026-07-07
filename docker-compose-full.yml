@@ -1,124 +1,58 @@
-version: '3.8'
-
 services:
-  # PostgreSQL Database
   postgres:
-    image: postgres:15-alpine
+    image: postgres:16-alpine
     container_name: lifeledger-db
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: medsecure
+      POSTGRES_DB: lifeledger
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    networks:
-      - lifeledger-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d lifeledger"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # IPFS Node (Local)
-  ipfs:
-    image: ipfs/kubo:latest
-    container_name: lifeledger-ipfs
-    environment:
-      - IPFS_PROFILE=server
-    ports:
-      - "4001:4001"     # P2P
-      - "5001:5001"     # API
-      - "8080:8080"     # Gateway
-    volumes:
-      - ipfs_data:/data/ipfs
-      - ipfs_staging:/export
-    networks:
-      - lifeledger-network
-    healthcheck:
-      test: ["CMD-SHELL", "ipfs id"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-
-  # Hardhat Node (Local Blockchain)
-  hardhat:
-    build:
-      context: ./blockchain
-      dockerfile: Dockerfile
-    container_name: lifeledger-blockchain
-    ports:
-      - "8545:8545"
-    volumes:
-      - ./blockchain:/app
-      - blockchain_data:/app/artifacts
-    networks:
-      - lifeledger-network
-    command: npx hardhat node --hostname 0.0.0.0
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8545 || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-
-  # Backend API
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: lifeledger-backend
+    container_name: lifeledger-api
     environment:
-      - NODE_ENV=development
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/medsecure
-      - IPFS_HOST=ipfs
-      - IPFS_PORT=5001
-      - BLOCKCHAIN_RPC=http://hardhat:8545
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      NODE_ENV: development
+      PORT: 5000
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/lifeledger
+      JWT_SECRET: local-dev-secret-change-before-real-use-64-characters-long
+      JWT_EXPIRES_IN: 8h
+      CORS_ORIGIN: http://localhost:3000
+      FRONTEND_URL: http://localhost:3000
+      UPLOAD_DIR: /app/private-uploads
+      MAX_FILE_SIZE_BYTES: 10485760
+      EMERGENCY_ACCESS_TTL_MINUTES: 120
     ports:
       - "5000:5000"
     volumes:
-      - ./backend:/app
-      - /app/node_modules
-      - uploads_data:/app/uploads
+      - uploads_data:/app/private-uploads
     depends_on:
       postgres:
         condition: service_healthy
-      ipfs:
-        condition: service_healthy
-      hardhat:
-        condition: service_healthy
-    networks:
-      - lifeledger-network
-    command: npm run dev
+    command: sh -c "npm run migrate && npm run start"
 
-  # Frontend
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: lifeledger-frontend
+    container_name: lifeledger-web
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:5000
+      NEXT_PUBLIC_API_URL: http://localhost:5000/api/v1
     ports:
       - "3000:3000"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
     depends_on:
       - backend
-    networks:
-      - lifeledger-network
-    command: npm run dev
 
 volumes:
   postgres_data:
-  ipfs_data:
-  ipfs_staging:
-  blockchain_data:
   uploads_data:
-
-networks:
-  lifeledger-network:
-    driver: bridge

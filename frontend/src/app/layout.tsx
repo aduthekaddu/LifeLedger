@@ -1,30 +1,15 @@
-import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
-import './globals.css'
-import { ThemeProvider } from '@/contexts/ThemeContext'
-import { ToastProvider } from '@/components/Toast'
-
-const inter = Inter({ subsets: ['latin'] })
+import type { Metadata } from 'next';
+import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'LifeLedger - Medical Record Management',
-  description: 'Secure, role-based medical record management system',
-}
+  title: 'LifeLedger',
+  description: 'FHIR-first health wallet with consent-scoped access.',
+};
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={inter.className} suppressHydrationWarning data-scroll-behavior="smooth">
-        <ThemeProvider>
-          <ToastProvider>
-            {children}
-          </ToastProvider>
-        </ThemeProvider>
-      </body>
+    <html lang="en">
+      <body>{children}</body>
     </html>
-  )
+  );
 }
