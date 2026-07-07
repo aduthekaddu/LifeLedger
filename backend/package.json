@@ -4,7 +4,7 @@
   "description": "LifeLedger consent-scoped FHIR-first API",
   "main": "dist/server.js",
   "scripts": {
-    "dev": "nodemon src/server.ts",
+    "dev": "nodemon --exec \"ts-node --files\" src/server.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "start": "node dist/server.js",
