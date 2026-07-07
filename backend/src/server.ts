@@ -45,7 +45,7 @@ export function createApp() {
   );
 
   app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', service: 'lifeledger-api', blockchain: 'removed' });
+    res.json({ status: 'ok', service: 'lifeledger-api' });
   });
 
   app.get('/api/v1/health', (_req, res) => {
@@ -75,7 +75,6 @@ if (require.main === module) {
     logger.info('LifeLedger API listening', {
       port: env.port,
       nodeEnv: env.nodeEnv,
-      blockchain: 'removed',
     });
   });
 

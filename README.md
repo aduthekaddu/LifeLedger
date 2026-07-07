@@ -1,98 +1,111 @@
-# LifeLedger - Medical Record Management System
+# LifeLedger
 
-A secure, role-based medical record management system with blockchain integration and IPFS storage.
+LifeLedger is a FHIR-first personal health wallet. It helps a patient organize records, maintain structured clinical data, share scoped access with a doctor or caregiver, prepare an emergency packet, export a standards-style FHIR bundle, and review an access ledger.
 
-## Features
+The rebuild intentionally removes blockchain and IPFS from the product path. The current priority is safer healthcare fundamentals: private files, consent scopes, short-lived emergency access, audit events, environment validation, migrations, tests, and honest product positioning.
 
-### Patient Features
-- View all medical records
-- Upload medical records
-- Approve/disapprove doctor access requests
-- View access audit trail
-- Manage consent for data sharing
-- Generate emergency access QR code
-- Revoke access permissions
-- View consent statistics
+## What Is Built
 
-### Doctor Features
-- Upload medical records for patients
-- Access patient records (with permission)
-- Search patients by ID
-- Emergency QR code access
-- View patient list
-- Request emergency access with reason
-- Add records with attachments
+- Next.js app router frontend with patient, doctor, and admin workspaces.
+- Express + TypeScript backend with PostgreSQL.
+- Workspace lockfile and root scripts.
+- SQL migrations instead of startup schema mutation.
+- Patient registration and httpOnly cookie sessions.
+- Private file upload/download with MIME and signature validation.
+- Structured clinical entries for allergies, medications, labs, conditions, immunizations, procedures, and care plans.
+- Consent grants and doctor access requests with scopes and expiry.
+- Emergency QR packets with restricted scopes and break-glass TTL.
+- FHIR-style bundle export.
+- Audit ledger for sensitive access and sharing events.
+- Conservative AI visit prep with citations and review status.
+- CI for install, typecheck, lint, tests, and build.
 
-### Admin Features
-- Add/remove doctors
-- View all doctors
-- Dashboard statistics
-- Monitor system activity
-- Manage user accounts
-- System-wide audit logs
+## What Is Not Claimed
 
-### Security Features
-- JWT-based authentication
-- Role-based access control (RBAC)
-- End-to-end encryption (AES-256)
-- Two-factor authentication ready
-- Complete audit logging
-- Blockchain integration (Hyperledger Fabric)
-- IPFS for decentralized file storage
-
-## Tech Stack
-
-### Backend
-- Node.js + Express + TypeScript
-- PostgreSQL database
-- Hyperledger Fabric blockchain
-- IPFS for file storage
-- JWT authentication
-- Winston logging
-- bcryptjs for password hashing
-
-### Frontend
-- Next.js 14
-- React 18
-- TypeScript
-- Tailwind CSS
-- Axios for API calls
-- Hero Icons
-- React Hook Form
+This repository is not HIPAA certified, SOC 2 certified, ISO 27001 certified, or production-ready for real protected health information. It is a recruiter-grade rebuild that demonstrates the technical controls and product thinking needed before those claims could be evaluated.
 
 ## Quick Start
 
-See [QUICKSTART.md](./QUICKSTART.md) for quick setup instructions.
+```bash
+npm install
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env.local
+npm run typecheck
+npm run test
+npm run lint
+npm run build
+```
 
-**Test Accounts:** The system automatically creates test accounts on first run:
-- Admin: `admin@lifeledger.com` / `Test@123456`
-- Doctor: `aditya.singh@lifeledger.com` / `Test@123456`
-- Patient: `patient@lifeledger.com` / `Test@123456`
+Start Postgres with Docker:
 
-See [TEST_ACCOUNTS.md](./TEST_ACCOUNTS.md) for detailed testing workflows.
+```bash
+docker compose up -d postgres
+npm run migrate
+npm run seed
+```
+
+Run the apps in two terminals:
+
+```bash
+npm run dev:backend
+npm run dev:frontend
+```
+
+Open:
+
+- Frontend: http://localhost:3000
+- API health: http://localhost:5000/api/v1/health
+
+Demo accounts after `npm run seed`:
+
+- Patient: `patient@lifeledger.dev` / `LifeLedgerDemo!2026`
+- Doctor: `doctor@lifeledger.dev` / `LifeLedgerDemo!2026`
+- Admin: `admin@lifeledger.dev` / `LifeLedgerDemo!2026`
+
+## Docker
+
+```bash
+docker compose up --build
+```
+
+Seed demo data in the running backend container:
+
+```bash
+docker compose exec backend npm run seed:prod
+```
 
 ## Project Structure
 
+```text
+LifeLedger/
+├── backend/          # Express API, migrations, policy, private storage
+├── frontend/         # Next.js health wallet UI
+├── docs/             # Ignored local learning guide
+├── package.json      # npm workspace scripts
+└── docker-compose.yml
 ```
-medsecure/
-├── backend/          # Express API server
-├── frontend/         # Next.js application
-├── blockchain/       # Hyperledger Fabric network
-├── SETUP.md         # Detailed setup instructions
-└── README.md        # This file
+
+## Verification
+
+```bash
+npm run typecheck
+npm run test
+npm run lint
+npm run build
+npm audit --omit=dev
 ```
 
-## License
+The backend policy tests cover patient ownership, doctor consent scopes, expired grants, scope normalization, and emergency packet restrictions.
 
-MIT License - See LICENSE file for details
+## Design Direction
 
-## Security & Compliance
+The UI is an operational healthcare dashboard, not a landing page. It uses dense panels, small-radius controls, scoped chips, QR packet preview, charts, FHIR bundle preview, and audit rows so the first screen demonstrates the actual product.
 
-This system is designed with HIPAA compliance in mind:
-- Encrypted data storage
-- Audit logging
-- Access controls
-- Secure authentication
-- Data backup and recovery
+## Next Real Production Steps
 
-**Note:** Full HIPAA compliance requires additional operational procedures, security assessments, and legal review beyond the technical implementation.
+- Replace local private files with encrypted object storage and malware scanning.
+- Add integration tests against a test PostgreSQL container.
+- Add provider verification and notification workflows.
+- Add background jobs for OCR/AI extraction.
+- Add FHIR validation against official profiles.
+- Add OpenTelemetry, security headers/CSP tuning, backup/restore drills, and threat modeling.

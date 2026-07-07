@@ -24,9 +24,12 @@ services:
       PORT: 5000
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/lifeledger
       JWT_SECRET: local-dev-secret-change-before-real-use-64-characters-long
+      JWT_EXPIRES_IN: 8h
       CORS_ORIGIN: http://localhost:3000
       FRONTEND_URL: http://localhost:3000
       UPLOAD_DIR: /app/private-uploads
+      MAX_FILE_SIZE_BYTES: 10485760
+      EMERGENCY_ACCESS_TTL_MINUTES: 120
     ports:
       - "5000:5000"
     volumes:
@@ -34,7 +37,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: sh -c "npm run migrate && npm run start"
+    command: sh -c "npm run migrate:prod && npm run start"
 
   frontend:
     build: ./frontend
@@ -49,22 +52,3 @@ services:
 volumes:
   postgres_data:
   uploads_data:
-    container_name: lifeledger-blockchain
-    ports:
-      - "8545:8545"
-    volumes:
-      - ./blockchain:/app
-      - blockchain_data:/app/artifacts
-    networks:
-      - lifeledger-network
-    command: npx hardhat node --hostname 0.0.0.0
-    restart: unless-stopped
-
-volumes:
-  ipfs_data:
-  ipfs_staging:
-  blockchain_data:
-
-networks:
-  lifeledger-network:
-    driver: bridge

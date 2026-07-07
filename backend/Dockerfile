@@ -6,7 +6,7 @@ RUN npm install
 FROM deps AS build
 COPY tsconfig.json ./
 COPY src ./src
-RUN npm run build
+RUN npm run build && mkdir -p dist/db && cp -R src/db/migrations dist/db/migrations
 
 FROM node:20-alpine AS runner
 WORKDIR /app

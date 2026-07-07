@@ -1,119 +1,40 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-echo "🧪 LifeLedger - Feature Verification Test"
-echo "=========================================="
-echo ""
+API_URL="${API_URL:-http://localhost:5000/api/v1}"
+COOKIE_JAR="$(mktemp)"
+trap 'rm -f "$COOKIE_JAR"' EXIT
 
-# Colors
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-BLUE='\033[0;34m'
-NC='\033[0m'
+echo "LifeLedger smoke test"
 
-API_URL="http://localhost:5000/api/v1"
+echo "1. Health"
+curl -fsS "$API_URL/health" | python3 -m json.tool
 
-# Login as patient to get token
-echo "1️⃣ Logging in as patient..."
-LOGIN_RESPONSE=$(curl -s -X POST "$API_URL/auth/login" \
+echo "2. Login as seeded patient"
+curl -fsS -c "$COOKIE_JAR" -X POST "$API_URL/auth/login" \
   -H "Content-Type: application/json" \
-  -d '{"email":"patient@lifeledger.com","password":"Test@123456"}')
+  -d '{"email":"patient@lifeledger.dev","password":"LifeLedgerDemo!2026"}' \
+  | python3 -m json.tool
 
-TOKEN=$(echo $LOGIN_RESPONSE | grep -o '"token":"[^"]*' | cut -d'"' -f4)
+echo "3. Read profile"
+curl -fsS -b "$COOKIE_JAR" "$API_URL/profile/me" | python3 -m json.tool
 
-if [ -z "$TOKEN" ]; then
-    echo -e "${RED}❌ Login failed${NC}"
-    exit 1
-fi
-
-echo -e "${GREEN}✅ Logged in successfully${NC}"
-echo ""
-
-# Test blockchain verification
-echo "2️⃣ Testing Blockchain Integration..."
-BLOCKCHAIN_RESPONSE=$(curl -s -X GET "$API_URL/blockchain/verify" \
-  -H "Authorization: Bearer $TOKEN")
-
-echo "$BLOCKCHAIN_RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$BLOCKCHAIN_RESPONSE"
-echo ""
-
-# Get blockchain stats
-echo "3️⃣ Getting Blockchain Statistics..."
-STATS_RESPONSE=$(curl -s -X GET "$API_URL/blockchain/stats" \
-  -H "Authorization: Bearer $TOKEN")
-
-echo "$STATS_RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$STATS_RESPONSE"
-echo ""
-
-# Create a test record to demonstrate features
-echo "4️⃣ Creating a test medical record..."
-RECORD_RESPONSE=$(curl -s -X POST "$API_URL/records" \
-  -H "Authorization: Bearer $TOKEN" \
+echo "4. Add a structured observation"
+curl -fsS -b "$COOKIE_JAR" -X POST "$API_URL/clinical-entries" \
   -H "Content-Type: application/json" \
-  -d '{
-    "patientId": 2,
-    "title": "Blockchain Test Record",
-    "description": "This is a test record to demonstrate blockchain, IPFS, and AI integration. Patient shows normal vital signs with slight elevation in blood pressure.",
-    "recordType": "checkup",
-    "recordDate": "2024-02-13"
-  }')
+  -d '{"type":"observation","title":"Resting heart rate","valueText":"68","unit":"bpm","onsetDate":"2026-07-07","notes":"Smoke test entry"}' \
+  | python3 -m json.tool
 
-echo "$RECORD_RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$RECORD_RESPONSE"
+echo "5. Export FHIR bundle"
+curl -fsS -b "$COOKIE_JAR" "$API_URL/fhir/export" | python3 -m json.tool
 
-# Extract record ID
-RECORD_ID=$(echo $RECORD_RESPONSE | grep -o '"id":[0-9]*' | head -1 | cut -d':' -f2)
+echo "6. Generate AI visit prep"
+curl -fsS -b "$COOKIE_JAR" -X POST "$API_URL/ai/visit-prep" \
+  -H "Content-Type: application/json" \
+  -d '{}' \
+  | python3 -m json.tool
 
-if [ ! -z "$RECORD_ID" ]; then
-    echo ""
-    echo -e "${GREEN}✅ Record created with ID: $RECORD_ID${NC}"
-    echo ""
-    
-    # Wait a bit for AI processing
-    echo "⏳ Waiting 3 seconds for AI analysis..."
-    sleep 3
-    
-    # Get the record to see AI insights
-    echo "5️⃣ Fetching record with AI insights..."
-    RECORD_DETAIL=$(curl -s -X GET "$API_URL/records/$RECORD_ID" \
-      -H "Authorization: Bearer $TOKEN")
-    
-    echo "$RECORD_DETAIL" | python3 -m json.tool 2>/dev/null || echo "$RECORD_DETAIL"
-    echo ""
-    
-    # Get blockchain audit trail
-    echo "6️⃣ Getting Blockchain Audit Trail..."
-    AUDIT_RESPONSE=$(curl -s -X GET "$API_URL/blockchain/audit/$RECORD_ID" \
-      -H "Authorization: Bearer $TOKEN")
-    
-    echo "$AUDIT_RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$AUDIT_RESPONSE"
-fi
+echo "7. Read audit ledger"
+curl -fsS -b "$COOKIE_JAR" "$API_URL/audit" | python3 -m json.tool
 
-echo ""
-echo "=========================================="
-echo -e "${BLUE}📊 Feature Summary${NC}"
-echo "=========================================="
-echo ""
-echo "✅ Blockchain Integration:"
-echo "   - Smart contract deployed"
-echo "   - All access logged on-chain"
-echo "   - Immutable audit trail"
-echo ""
-echo "✅ IPFS Storage:"
-echo "   - Decentralized file storage"
-echo "   - Content-addressed files"
-echo "   - Local IPFS node running"
-echo ""
-echo "✅ AI Analysis:"
-echo "   - Automated medical insights"
-echo "   - Key findings extraction"
-echo "   - Health recommendations"
-echo ""
-echo "🌐 Access the full system:"
-echo "   Frontend: http://localhost:3000"
-echo "   Backend:  http://localhost:5000"
-echo ""
-echo "📚 API Endpoints to test:"
-echo "   GET  /api/v1/blockchain/verify  - Verify all systems"
-echo "   GET  /api/v1/blockchain/stats   - Get statistics"
-echo "   GET  /api/v1/blockchain/audit/:id - Get audit trail"
-echo ""
+echo "Smoke test complete"

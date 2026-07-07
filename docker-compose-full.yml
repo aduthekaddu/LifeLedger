@@ -39,7 +39,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: sh -c "npm run migrate && npm run start"
+    command: sh -c "npm run migrate:prod && npm run start"
 
   frontend:
     build:

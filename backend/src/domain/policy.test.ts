@@ -79,7 +79,7 @@ test('expired grants do not authorize access', () => {
 });
 
 test('normal scope parsing removes unsupported values', () => {
-  assert.deepEqual(normalizeScopes(['documents', 'blockchain', 'labs', 'labs']), [
+  assert.deepEqual(normalizeScopes(['documents', 'unsupported-scope', 'labs', 'labs']), [
     'documents',
     'labs',
   ]);
