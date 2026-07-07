@@ -1,5 +1,7 @@
-import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
+import { Pool, PoolClient, QueryResult, QueryResultRow, types } from 'pg';
 import { env } from '../config/env';
+
+types.setTypeParser(types.builtins.DATE, (value) => value);
 
 export const pool = new Pool({
   connectionString: env.databaseUrl,

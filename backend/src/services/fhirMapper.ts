@@ -5,7 +5,7 @@ export interface FhirPatientRow {
   email: string;
   full_name: string;
   phone: string | null;
-  date_of_birth: string | null;
+  date_of_birth: string | Date | null;
   blood_type: string | null;
 }
 
@@ -16,7 +16,7 @@ export interface FhirRecordRow {
   mime_type: string;
   file_size_bytes: number;
   checksum_sha256: string;
-  created_at: string;
+  created_at: string | Date;
 }
 
 export interface FhirClinicalEntryRow {
@@ -24,13 +24,37 @@ export interface FhirClinicalEntryRow {
   type: string;
   title: string;
   status: string;
-  onset_date: string | null;
+  onset_date: string | Date | null;
   value_text: string | null;
   unit: string | null;
   code_system: string | null;
   code: string | null;
   notes: string | null;
-  created_at: string;
+  created_at: string | Date;
+}
+
+function pad(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+export function toFhirDate(value: string | Date | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    return value.includes('T') ? value.slice(0, 10) : value;
+  }
+
+  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
+}
+
+export function toFhirDateTime(value: string | Date | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  return typeof value === 'string' ? value : value.toISOString();
 }
 
 function patientResource(patient: FhirPatientRow) {
@@ -42,7 +66,7 @@ function patientResource(patient: FhirPatientRow) {
       { system: 'email', value: patient.email },
       ...(patient.phone ? [{ system: 'phone', value: patient.phone }] : []),
     ],
-    birthDate: patient.date_of_birth,
+    birthDate: toFhirDate(patient.date_of_birth),
     extension: patient.blood_type
       ? [
           {
@@ -61,7 +85,7 @@ function documentReference(record: FhirRecordRow) {
     status: 'current',
     type: { text: record.category },
     description: record.title,
-    date: record.created_at,
+    date: toFhirDateTime(record.created_at),
     content: [
       {
         attachment: {
@@ -97,7 +121,7 @@ function clinicalResource(entry: FhirClinicalEntryRow) {
       id: entry.id,
       status: entry.status,
       medicationCodeableConcept: code,
-      effectiveDateTime: entry.onset_date,
+      effectiveDateTime: toFhirDate(entry.onset_date),
       note: entry.notes ? [{ text: entry.notes }] : [],
     };
   }
@@ -108,7 +132,7 @@ function clinicalResource(entry: FhirClinicalEntryRow) {
       id: entry.id,
       clinicalStatus: { text: entry.status },
       code,
-      recordedDate: entry.created_at,
+      recordedDate: toFhirDateTime(entry.created_at),
       note: entry.notes ? [{ text: entry.notes }] : [],
     };
   }
@@ -119,7 +143,7 @@ function clinicalResource(entry: FhirClinicalEntryRow) {
       id: entry.id,
       clinicalStatus: { text: entry.status },
       code,
-      onsetDateTime: entry.onset_date,
+      onsetDateTime: toFhirDate(entry.onset_date),
       note: entry.notes ? [{ text: entry.notes }] : [],
     };
   }
@@ -130,7 +154,7 @@ function clinicalResource(entry: FhirClinicalEntryRow) {
       id: entry.id,
       status: entry.status === 'active' ? 'completed' : entry.status,
       vaccineCode: code,
-      occurrenceDateTime: entry.onset_date ?? entry.created_at,
+      occurrenceDateTime: toFhirDate(entry.onset_date) ?? toFhirDateTime(entry.created_at),
       note: entry.notes ? [{ text: entry.notes }] : [],
     };
   }
@@ -140,7 +164,7 @@ function clinicalResource(entry: FhirClinicalEntryRow) {
     id: entry.id,
     status: entry.status,
     code,
-    effectiveDateTime: entry.onset_date ?? entry.created_at,
+    effectiveDateTime: toFhirDate(entry.onset_date) ?? toFhirDateTime(entry.created_at),
     valueString: entry.value_text,
     unit: entry.unit,
     note: entry.notes ? [{ text: entry.notes }] : [],
